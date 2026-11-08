@@ -37,37 +37,39 @@ const useSupabaseAuthState = async (sessionId) => {
 
     const creds = (await readData('creds')) || initAuthCreds();
 
-    return {
-        state: {
-            creds,
-            keys: {
-                get: async (type, ids) => {
-                    const data = {};
-                    await Promise.all(
-                        ids.map(async (id) => {
-                            let value = await readData(`${type}-${id}`);
-                            data[id] = value;
-                        })
-                    );
-                    return data;
-                },
-                set: async (data) => {
-                    const tasks = [];
-                    for (const category of Object.keys(data)) {
-                        for (const id of Object.keys(data[category])) {
-                            const value = data[category][id];
-                            const key = `${category}-${id}`;
-                            if (value) {
-                                tasks.push(writeData(value, key));
-                            } else {
-                                tasks.push(removeData(key));
-                            }
+    const state = {
+        creds,
+        keys: {
+            get: async (type, ids) => {
+                const data = {};
+                await Promise.all(
+                    ids.map(async (id) => {
+                        let value = await readData(`${type}-${id}`);
+                        data[id] = value;
+                    })
+                );
+                return data;
+            },
+            set: async (data) => {
+                const tasks = [];
+                for (const category of Object.keys(data)) {
+                    for (const id of Object.keys(data[category])) {
+                        const value = data[category][id];
+                        const key = `${category}-${id}`;
+                        if (value) {
+                            tasks.push(writeData(value, key));
+                        } else {
+                            tasks.push(removeData(key));
                         }
                     }
-                    await Promise.all(tasks);
                 }
+                await Promise.all(tasks);
             }
-        },
+        }
+    };
+
+    return {
+        state,
         saveCreds: async () => {
             await writeData(state.creds, 'creds');
         }
