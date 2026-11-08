@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
@@ -7,7 +8,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const useSupabaseAuthState = async (sessionId) => {
     const writeData = async (data, key) => {
-        const jsonString = JSON.stringify(data, (k, v) => Buffer.isBuffer(v) ? Array.from(v) : v);
+        const jsonString = JSON.stringify(data, BufferJSON.replacer);
         await supabase.from('sessions').upsert({
             session_id: sessionId,
             key: key,
@@ -24,12 +25,7 @@ const useSupabaseAuthState = async (sessionId) => {
                 .eq('key', key)
                 .single();
             if (error || !data) return null;
-            return JSON.parse(data.data, (k, v) => {
-                if (v !== null && typeof v === 'object' && v.type === 'Buffer') {
-                    return Buffer.from(v.data);
-                }
-                return v;
-            });
+            return JSON.parse(data.data, BufferJSON.reviver);
         } catch {
             return null;
         }
@@ -39,11 +35,7 @@ const useSupabaseAuthState = async (sessionId) => {
         await supabase.from('sessions').delete().eq('session_id', sessionId).eq('key', key);
     };
 
-    const creds = (await readData('creds')) || {
-        registered: false,
-        pairingCode: undefined,
-        signalIdentities: []
-    };
+    const creds = (await readData('creds')) || initAuthCreds();
 
     return {
         state: {
