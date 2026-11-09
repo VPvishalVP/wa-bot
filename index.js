@@ -179,6 +179,15 @@ const chatHistory = new Map();
 const MAX_HISTORY_MESSAGES = 10;
 
 async function generateAIReply(sender, userMessage) {
+  // Answer common Indian acronym/full-form questions deterministically for accuracy.
+  const normalizedQuestion = userMessage.toLowerCase().replace(/[?!.]/g, ' ').replace(/\\s+/g, ' ').trim();
+  const fullFormMatch = normalizedQuestion.match(/\\b(?:what is |tell me | batao |बताओ )?(?:the )?(?:full form of |full form |ka full form |ki full form |का फुल फॉर्म |की फुल फॉर्म )?([a-z]{2,8})\\s*(?:ka full form|ki full form|full form|full form kya hai)?\\b/);
+  const knownFullForms = { mp: 'Madhya Pradesh', up: 'Uttar Pradesh', cid: 'Crime Investigation Department (CID)', usa: 'United States of America', uae: 'United Arab Emirates', rbi: 'Reserve Bank of India', cbi: 'Central Bureau of Investigation', isro: 'Indian Space Research Organisation', nasa: 'National Aeronautics and Space Administration', atm: 'Automated Teller Machine', pnr: 'Passenger Name Record', otp: 'One-Time Password', cpu: 'Central Processing Unit', html: 'HyperText Markup Language', www: 'World Wide Web', lpg: 'Liquefied Petroleum Gas', gst: 'Goods and Services Tax', upsc: 'Union Public Service Commission', ips: 'Indian Police Service', ias: 'Indian Administrative Service' };
+  if (fullFormMatch) {
+    const acronym = fullFormMatch[1].toLowerCase();
+    if (knownFullForms[acronym] && /full form|fullform|ka full|ki full|full form kya|full form of/i.test(userMessage)) return knownFullForms[acronym];
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return generateReply(userMessage);
 
