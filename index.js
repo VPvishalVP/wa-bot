@@ -9,10 +9,6 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-let sock;
-let isBotActive = true;
-let isAutoReplyEnabled = true;
-let connectionStatus = 'Disconnected';
 
 const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -52,7 +48,7 @@ pre{white-space:pre-wrap;color:#ddd;font-size:13px}
 footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </style>
 </head>
-<body><section id="authGate" style="position:fixed;inset:0;z-index:99;background:#050505;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur 6-64 characters password se login karein ya account banayein.</p><label>Mobile number (country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="919876543210"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button onclick="authAction('login')">LOGIN</button><button onclick="authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section><div class="wrap">
+<body><section id="authGate" style="position:fixed;inset:0;z-index:99;background:#050505;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur 6-64 characters password se login karein ya account banayein.</p><label>Mobile number (10 digits; country code +91 automatic)</label><div style="display:flex;align-items:center;gap:8px"><span class="pill">+91</span><input id="authPhone" inputmode="numeric" maxlength="10" placeholder="9876543210" style="flex:1"></div><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button onclick="authAction('login')">LOGIN</button><button onclick="authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section><div class="wrap">
 <header><div class="logo">AAIRA ✦</div><div class="subtitle">VIHUHUHU KA OFFLINE ASSISTANT</div></header>
 <section class="panel">
 <div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected</span></div>
@@ -84,8 +80,8 @@ AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <footer>AAIRA • Gothic Dark Theme</footer>
 </div>
 <script>
-async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok){document.getElementById('authGate').style.display='none';document.getElementById('phone').value=phone;document.getElementById('phone').readOnly=true;refreshStatus();}}catch(e){msg.textContent='Server connection failed.'}}
-async function forgotAccount(){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)){alert('Phone number country code ke saath enter karein.');return}if(prompt('Account data permanently delete karne ke liye DELETE type karein:')!=='DELETE')return;try{const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,confirm:'DELETE'})});const d=await r.json();document.getElementById('authMessage').textContent=d.message||d.error||'Done';}catch(e){document.getElementById('authMessage').textContent='Server connection failed.'}}
+async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='India ka valid 10 digit mobile number enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok){document.getElementById('authGate').style.display='none';document.getElementById('phone').value='91'+phone;document.getElementById('phone').readOnly=true;refreshStatus();}}catch(e){msg.textContent='Server connection failed.'}}
+async function forgotAccount(){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)){alert('India ka valid 10 digit mobile number enter karein.');return}if(prompt('Account data permanently delete karne ke liye DELETE type karein:')!=='DELETE')return;try{const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,confirm:'DELETE'})});const d=await r.json();document.getElementById('authMessage').textContent=d.message||d.error||'Done';}catch(e){document.getElementById('authMessage').textContent='Server connection failed.'}}
 async function logoutAccount(){try{await fetch('/api/auth/logout',{method:'POST'});location.reload();}catch(e){alert('Logout failed')}}
 async function loadChats(){const list=document.getElementById("chatList");const thread=document.getElementById("chatThread");list.textContent="Loading chats...";thread.textContent="";try{const r=await fetch("/api/chats");const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load chats");list.textContent="";if(!d.chats.length){list.textContent="No messages saved yet.";return}d.chats.forEach(chat=>{const btn=document.createElement("button");btn.style.width="100%";btn.textContent=chat.contact+" • "+chat.count+" messages • "+chat.lastMessage;btn.onclick=()=>loadThread(chat.jid);list.appendChild(btn)})}catch(e){list.textContent=e.message}}
 async function loadThread(jid){const thread=document.getElementById("chatThread");thread.textContent="Loading conversation...";try{const r=await fetch("/api/chats/"+encodeURIComponent(jid));const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not load conversation");thread.textContent="";const title=document.createElement("h3");title.textContent="Chat: "+d.contact;thread.appendChild(title);d.messages.forEach(m=>{const p=document.createElement("p");p.style.cssText="padding:10px;border:1px solid #555;border-radius:8px;white-space:pre-wrap";p.textContent=(m.direction==="out"?"AAIRA → ":"Contact → ")+m.text+"\n"+new Date(m.timestamp).toLocaleString();thread.appendChild(p)})}catch(e){thread.textContent=e.message}}
@@ -130,10 +126,10 @@ function sessionIdFor(phone){return 'aaira_user_'+phone;}
 function getWebSession(req){const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('aaira_session='))?.slice(14);const session=token&&webSessions.get(token);if(session&&session.expiresAt>Date.now())return session;if(token)webSessions.delete(token);return null;}
 function requireWebLogin(req,res,next){const session=getWebSession(req);if(!session)return res.status(401).json({error:'Please login first.'});req.webSession=session;next();}
 function createWebSession(phone,res){const token=crypto.randomBytes(32).toString('hex');webSessions.set(token,{phone,expiresAt:Date.now()+86400000});res.setHeader('Set-Cookie','aaira_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400');}
-app.post('/api/auth/register',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password 6 se 64 characters ka rakhein (spaces nahi).'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
-app.post('/api/auth/login',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone/password format invalid. Password 6-64 characters ka hona chahiye (spaces nahi).'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
+app.post('/api/auth/register',async(req,res)=>{try{const phone=normalizePhone(req.body.phone);const password=String(req.body.password||'');if(!//^\d{10}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password 6 se 64 characters ka rakhein (spaces nahi).'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
+app.post('/api/auth/login',async(req,res)=>{try{const phone=normalizePhone(req.body.phone);const password=String(req.body.password||'');if(!//^\d{10}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone/password format invalid. Password 6-64 characters ka hona chahiye (spaces nahi).'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
 app.post('/api/auth/logout',requireWebLogin,(req,res)=>{const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('aaira_session='))?.slice(14);if(token)webSessions.delete(token);res.setHeader('Set-Cookie','aaira_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');res.json({success:true,message:'Logged out.'});});
-app.post('/api/auth/forgot',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');if(!/^\d{10,15}$/.test(phone)||req.body.confirm!=='DELETE')return res.status(400).json({error:'Phone and DELETE confirmation required.'});const result=await aairaAuth.deleteAccount(phone);for(const [token,session] of webSessions){if(session.phone===phone)webSessions.delete(token);}res.json({success:true,message:result==='deleted'?'Stored account data deleted. You can register again.':'Account not found for this number.'});}catch(e){console.error('Delete account error:',e.message);res.status(500).json({error:'Account data delete failed.'});}});
+app.post('/api/auth/forgot',async(req,res)=>{try{const phone=normalizePhone(req.body.phone);if(!//^\d{10}$/.test(phone)||req.body.confirm!=='DELETE')return res.status(400).json({error:'Phone and DELETE confirmation required.'});const result=await aairaAuth.deleteAccount(phone);for(const [token,session] of webSessions){if(session.phone===phone)webSessions.delete(token);}res.json({success:true,message:result==='deleted'?'Stored account data deleted. You can register again.':'Account not found for this number.'});}catch(e){console.error('Delete account error:',e.message);res.status(500).json({error:'Account data delete failed.'});}});
 app.get('/', (req, res) => res.type('html').send(dashboardHtml));
 
 app.get('/api/status', requireWebLogin, (req, res) => {
@@ -153,79 +149,10 @@ const { getChatReply } = require('./chatBank');
 const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
+function normalizePhone(input){const digits=String(input||'').replace(/\D/g,'');return /^\d{10}$/.test(digits)?'91'+digits:'';}
 
 async function startUserBot(phone){if(userSockets.has(phone))return userSockets.get(phone);const {state,saveCreds}=await useSupabaseAuthState(sessionIdFor(phone));const userSock=makeWASocket({auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,browser:['Ubuntu','Chrome','20.0.04']});userSockets.set(phone,userSock);userStatus.set(phone,'Connecting');userSock.ev.on('creds.update',saveCreds);userSock.ev.on('connection.update',({connection,lastDisconnect})=>{if(connection==='open')userStatus.set(phone,'Connected');if(connection==='connecting')userStatus.set(phone,'Connecting');if(connection==='close'){userStatus.set(phone,'Disconnected');const code=lastDisconnect?.error?.output?.statusCode;if(code!==DisconnectReason.loggedOut)setTimeout(()=>{if(userSockets.get(phone)===userSock){userSockets.delete(phone);startUserBot(phone).catch(console.error);}},3000);else console.log('User session logged out for account ending '+phone.slice(-4));}});userSock.ev.on('messages.upsert',async({messages,type})=>{if(type!=='notify')return;for(const msg of messages){try{if(!msg.message||msg.key.fromMe)continue;const sender=msg.key.remoteJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;const textMessage=(msg.message.conversation||msg.message.extendedTextMessage?.text||msg.message.imageMessage?.caption||msg.message.videoMessage?.caption||'').trim();if(textMessage)saveUserChat(phone,sender,"in",textMessage);const settings=settingsFor(phone);if(!textMessage||!settings.botActive||!settings.autoReplyEnabled)continue;const send=async text=>{await userSock.sendMessage(sender,{text});saveUserChat(phone,sender,"out",text)};let greeted=userGreeted.get(phone);if(!greeted){greeted=new Set();userGreeted.set(phone,greeted);}if(!greeted.has(sender)){await send('*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');greeted.add(sender);}let replyText;try{replyText=getChatReply(textMessage);}catch(e){console.error('User chat reply failed:',e.message);continue;}if(replyText)await send(replyText);}catch(err){console.error('User message handler error:',err.message);}}});return userSock;}
 
-async function startBot() {
-  const { state, saveCreds } = await useSupabaseAuthState('bot_session');
-  sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: false,
-    connectTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,
-    browser: ['Ubuntu', 'Chrome', '20.0.04']
-  });
-
-  sock.ev.on('creds.update', saveCreds);
-
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'open') {
-      connectionStatus = 'Connected';
-      console.log('WhatsApp Connected Successfully via Supabase! ✅');
-    }
-    if (connection === 'connecting') connectionStatus = 'Connecting';
-    if (connection === 'close') {
-      connectionStatus = 'Disconnected';
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      console.log('Connection closed:', statusCode);
-      if (statusCode !== DisconnectReason.loggedOut) {
-        setTimeout(() => startBot().catch(console.error), 3000);
-      } else {
-        console.log('Logged out. Re-pair required.');
-      }
-    }
-  });
-
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
-    for (const msg of messages) {
-      try {
-        if (!msg.message || msg.key.fromMe) continue;
-        const sender = msg.key.remoteJid;
-        if (!sender || sender === 'status@broadcast' || sender.endsWith('@g.us')) continue;
-        const phone = sender.split('@')[0].replace(/[^0-9]/g, '');
-        const textMessage = (
-          msg.message.conversation ||
-          msg.message.extendedTextMessage?.text ||
-          msg.message.imageMessage?.caption ||
-          msg.message.videoMessage?.caption || ''
-        ).trim();
-        if (!textMessage || !isBotActive || !isAutoReplyEnabled) continue;
-
-        const send = (text) => sock.sendMessage(sender, { text });
-
-
-        if (!greetedSenders.has(sender)) {
-          await send('*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
-          greetedSenders.add(sender);
-        }
-
-        let replyText;
-        try { replyText = getChatReply(textMessage); }
-        catch (aiErr) { console.error('Chat bank reply failed:', aiErr.message); continue; }
-        if (replyText) {
-          await send(replyText);
-          console.log('[Reply Sent Successfully]');
-        }
-      } catch (err) {
-        console.error('Error processing message:', err);
-      }
-    }
-  });
-}
-
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-  startBot().catch(console.error);
 });
