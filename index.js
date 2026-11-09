@@ -94,9 +94,41 @@ AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <footer>AAIRA • Gothic Dark Theme</footer>
 </div>
 <script>
-let authBusy=false;function showAuthMessage(text,ok=false){const msg=document.getElementById('authMessage');msg.textContent=text;msg.style.cssText='display:block;padding:12px;margin-top:12px;border:1px solid '+(ok?'#55c58b':'#ff7777')+';border-radius:10px;background:'+(ok?'#10251d':'#2a1010')+';color:'+(ok?'#9fffc5':'#ffb3b3')+';font-size:14px;font-weight:bold;min-height:42px';}
-async function authAction(action){if(authBusy)return;const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const loginBtn=document.getElementById('loginBtn');const registerBtn=document.getElementById('registerBtn');if(!/^\\d{10,15}$/.test(phone)){showAuthMessage('Phone number 10-15 digits ka country code ke saath enter karein (jaise 91...).');document.getElementById('authPhone').focus();return}if(!/^\\S{6,64}$/.test(password)){showAuthMessage('Password 6-64 characters ka hona chahiye, spaces ke bina.');document.getElementById('authPassword').focus();return}authBusy=true;loginBtn.disabled=true;registerBtn.disabled=true;const oldLogin=loginBtn.textContent,oldRegister=registerBtn.textContent;loginBtn.textContent=action==='login'?'LOGIN…':'LOGIN';registerBtn.textContent=action==='register'?'REGISTER…':'REGISTER';showAuthMessage(action==='login'?'⏳ Login request server par bheji ja rahi hai…':'⏳ Account create request server par bheji ja rahi hai…',true);try{const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),25000);let r;try{r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password}),credentials:'same-origin',cache:'no-store',signal:controller.signal});}finally{clearTimeout(timeout)}let d={};try{d=await r.json()}catch(e){d={error:'Server ne readable response nahi diya (HTTP '+r.status+').'}}if(r.ok&&d.success){showAuthMessage(d.message||'Login successful.',true);document.getElementById('authGate').style.display='none';loadAssistantName();}else{showAuthMessage('❌ '+(d.message||d.error||('Request failed (HTTP '+r.status+').')));}}catch(e){showAuthMessage(e.name==='AbortError'?'⏱ Server response 25 seconds se zyada le raha hai. Retry karein.':'❌ Server connection failed: '+(e.message||'network error'));}finally{authBusy=false;loginBtn.disabled=false;registerBtn.disabled=false;loginBtn.textContent=oldLogin;registerBtn.textContent=oldRegister;}}
-document.getElementById('loginBtn').addEventListener('click',e=>{e.preventDefault();authAction('login')});document.getElementById('registerBtn').addEventListener('click',e=>{e.preventDefault();authAction('register')});document.getElementById('authPhone').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();authAction('login')}});document.getElementById('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();authAction('login')}});window.addEventListener('error',e=>showAuthMessage('Dashboard script error: '+(e.message||'unknown error')));
+(function(){
+let busy=false;
+function message(t,success){var m=document.getElementById('authMessage');if(!m)return;m.textContent=t;m.style.cssText='display:block;padding:12px;margin-top:12px;border:1px solid '+(success?'#55c58b':'#ff7777')+';border-radius:10px;background:'+(success?'#10251d':'#2a1010')+';color:'+(success?'#9fffc5':'#ffb3b3')+';font-size:14px;font-weight:bold;min-height:42px';
+}
+async function submit(action){
+if(busy)return;
+var phone=(document.getElementById('authPhone').value||'').replace(/\D/g,'');
+var password=document.getElementById('authPassword').value||'';
+if(!/^\d{10,15}$/.test(phone)){message('Phone number country code ke saath 10-15 digits ka enter karein.');return;}
+if(!/^\S{6,64}$/.test(password)){message('Password 6-64 characters ka hona chahiye (spaces nahi).');return;}
+busy=true;var l=document.getElementById('loginBtn'),rbtn=document.getElementById('registerBtn');l.disabled=true;rbtn.disabled=true;
+var prevL=l.textContent,prevR=rbtn.textContent;l.textContent='PLEASE WAIT…';rbtn.textContent='PLEASE WAIT…';
+message(action==='login'?'Login request bhej rahe hain…':'Register request bhej rahe hain…',true);
+try{
+var controller=new AbortController(),timer=setTimeout(function(){controller.abort()},30000);
+var response;
+try{response=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({phone:phone,password:password}),signal:controller.signal});}
+finally{clearTimeout(timer);}
+var data={};try{data=await response.json()}catch(_){}
+if(response.ok&&data.success){message(data.message||'Success! Dashboard load ho raha hai.',true);document.getElementById('authGate').style.display='none';setTimeout(function(){window.location.reload()},500);}
+else message('❌ '+(data.error||data.message||('Server response HTTP '+response.status)));
+}catch(e){message(e.name==='AbortError'?'Server timeout (30 sec). Retry karein.':'Request fail: '+(e.message||'network error'));}
+finally{busy=false;l.disabled=false;rbtn.disabled=false;l.textContent=prevL;rbtn.textContent=prevR;}
+}
+window.authAction=submit;
+document.getElementById('loginBtn').removeAttribute('onclick');
+document.getElementById('registerBtn').removeAttribute('onclick');
+document.getElementById('loginBtn').addEventListener('click',function(e){e.preventDefault();submit('login')});
+document.getElementById('registerBtn').addEventListener('click',function(e){e.preventDefault();submit('register')});
+document.getElementById('authPhone').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submit('login')}});
+document.getElementById('authPassword').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submit('login')}});
+})();
+</script>
+<script>
+
 async function forgotAccount(){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)){alert('Phone number country code ke saath enter karein.');return}if(prompt('Account data permanently delete karne ke liye DELETE type karein:')!=='DELETE')return;try{const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,confirm:'DELETE'})});const d=await r.json();document.getElementById('authMessage').textContent=d.message||d.error||'Done';}catch(e){document.getElementById('authMessage').textContent='Server connection failed.'}}
 async function loadAssistantName(){try{const r=await fetch('/api/assistant-name');const d=await r.json();if(r.ok){document.getElementById('assistantName').value=d.displayName||'VIHUHUHU';document.getElementById('assistantNameMessage').textContent='Saved naam: '+(d.displayName||'VIHUHUHU')}}catch(e){document.getElementById('assistantNameMessage').textContent='Naam load nahi hua.'}}
 async function saveAssistantName(){const displayName=document.getElementById('assistantName').value.trim();const msg=document.getElementById('assistantNameMessage');if(!displayName||displayName.length>30){msg.textContent='Naam 1 se 30 characters ka rakhein.';return}try{const r=await fetch('/api/assistant-name',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName})});const d=await r.json();msg.textContent=r.ok?'Saved! Greeting mein '+d.displayName+' bolega.':(d.error||'Save nahi hua.')}catch(e){msg.textContent='Server connection failed.'}}
