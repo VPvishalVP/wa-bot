@@ -75,7 +75,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <pre>!ping  — Check bot reply
 !menu  — Show commands
 Welcome message — First message from each sender
-Gemini AI auto reply — natural Hindi/Hinglish/English replies</pre>
+AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <p class="note">Dashboard theme: Gothic Dark • Black & White • Silver glow</p>
 </section>
 <footer>AAIRA • Gothic Dark Theme</footer>
@@ -169,60 +169,79 @@ app.get('/pair', async (req, res) => {
   }
 });
 
-// Gemini-powered natural chat. Conversation context stays in server RAM and is limited per sender.
-const chatHistory = new Map();
-const MAX_HISTORY_MESSAGES = 12;
+// Fixed assistant reply bank: no external AI/API calls.
+const assistantReplyRules = [
+  { keys: /\b(hi|hello|hey|hola|namaste|नमस्ते|हेलो|हाय)\b/i, hi: "Namaste! Main AAIRA hoon. Aap kis cheez mein madad chahte hain?", en: "Hello! I’m AAIRA. What can I help you with?" },
+  { keys: /\b(good morning|सु.?प्रभात|शुभ प्रभात)\b/i, hi: "Good morning! Aapka din achha rahe. Bataiye, kis kaam mein madad karun?", en: "Good morning! Hope you have a great day. How can I help?" },
+  { keys: /\b(good afternoon|शुभ दोपहर)\b/i, hi: "Good afternoon! Bataiye, main aapki kya help kar sakti hoon?", en: "Good afternoon! How can I help you?" },
+  { keys: /\b(good evening|शुभ संध्या)\b/i, hi: "Good evening! Aapko kis cheez mein madad chahiye?", en: "Good evening! What can I help you with?" },
+  { keys: /\b(good night|शुभ रात्रि|शुभ रात्री)\b/i, hi: "Good night! Aaram se soiye. 🌙", en: "Good night! Sleep well. 🌙" },
+  { keys: /\b(how are you|kaisi ho|kaise ho|कैसी हो|कैसे हो)\b/i, hi: "Main AAIRA hoon—ready aur kaam karne ke liye available! Aap kaise hain?", en: "I’m AAIRA, ready to help! How are you doing?" },
+  { keys: /\b(who are you|tum kaun|aap kaun|कौन हो|आप कौन)\b/i, hi: "Main AAIRA hoon, aapka WhatsApp assistant. Main programmed topics par fixed replies deti hoon; main Gemini ya live AI nahi hoon.", en: "I’m AAIRA, your WhatsApp assistant. I use programmed replies for supported topics; I’m not a live AI model." },
+  { keys: /\b(your name|naam kya|नाम क्या|name kya)\b/i, hi: "Mera naam AAIRA hai. 😊", en: "My name is AAIRA. 😊" },
+  { keys: /\b(help|madad|मदद| सहायता|assist)\b/i, hi: "Main greetings, basic information, study tips, coding basics, WhatsApp bot help, simple maths, time/date aur common questions mein programmed help de sakti hoon. Apna sawaal seedha bhejein.", en: "I can provide programmed help with greetings, basic information, study tips, coding basics, WhatsApp bot help, simple math, time/date, and common questions. Send your question directly." },
+  { keys: /\b(menu|commands|command list|options)\b/i, hi: "AAIRA: !ping — bot check; !menu — commands. Main common greetings, help, study, coding, bot-related questions aur basic maths ke replies bhi handle karti hoon.", en: "AAIRA menu: !ping — check bot; !menu — commands. I also handle common greetings, help, study, coding, bot questions, and basic math." },
+  { keys: /\b(ping)\b/i, hi: "Pong! ✅ AAIRA online hai.", en: "Pong! ✅ AAIRA is online." },
+  { keys: /\b(thank you|thanks|thx|shukriya|धन्यवाद| शुक्रिया)\b/i, hi: "Aapka swagat hai! 😊", en: "You’re welcome! 😊" },
+  { keys: /\b(welcome|स्वागत)\b/i, hi: "Khushi hui! 😊", en: "Glad to help! 😊" },
+  { keys: /\b(sorry|maaf|माफ़ी|माफ करना)\b/i, hi: "Koi baat nahi. 😊", en: "No worries. 😊" },
+  { keys: /\b(bye|goodbye|alvida|फिर मिलेंगे|बाय)\b/i, hi: "Bye! Apna khayal rakhiye. 👋", en: "Goodbye! Take care. 👋" },
+  { keys: /\b(love you|i love you|प्यार करता|प्यार करती)\b/i, hi: "Aapki kindness ke liye shukriya! Main ek AI-style programmed assistant hoon, aur help ke liye yahan hoon. 😊", en: "That’s kind of you! I’m a programmed assistant, here to help. 😊" },
+  { keys: /\b(joke| मजाक|चुटकुला|funny)\b/i, hi: "Teacher: Homework kahan hai? Student: Sir, Wi-Fi ke saath upload kiya tha—network hi fail ho gaya! 😄", en: "Why did the computer go to the doctor? It had a virus! 😄" },
+  { keys: /\b(motivat|motivation|प्रेरणा|inspire)\b/i, hi: "Chhote steps bhi progress hote hain. Roz thoda sa consistent effort rakho—perfect hone se pehle shuru karna zaroori hai. 💪", en: "Small steps are still progress. Stay consistent; starting matters more than being perfect. 💪" },
+  { keys: /\b(sad|dukhi|उदास|upset|depressed|tension|pareshan|परेशान)\b/i, hi: "Mujhe afsos hai ki aap aisa feel kar rahe hain. Kisi bharosemand dost ya family member se baat karna helpful ho sakta hai. Agar aap immediate danger mein hain, local emergency help lein.", en: "I’m sorry you’re feeling this way. Talking with someone you trust may help. If you’re in immediate danger, contact local emergency services." },
+  { keys: /\b(study|padhai|पढ़ाई|exam| परीक्षा|student)\b/i, hi: "Study tip: 25 minute focus + 5 minute break (Pomodoro) try karein. Topic ko chhote parts mein baant kar active recall aur practice questions karein.", en: "Study tip: try 25 minutes of focus followed by a 5-minute break. Break topics into small parts and use active recall and practice questions." },
+  { keys: /\b(time management|manage time|समय प्रबंधन)\b/i, hi: "Aaj ke 3 important tasks likhein, har task ka realistic time set karein, aur distractions ko study/work block ke dauran mute rakhein.", en: "List your three priorities, assign realistic time blocks, and mute distractions during focused work." },
+  { keys: /\b(english|अंग्रेजी|अंग्रेज़ी|learn english)\b/i, hi: "English practice ke liye roz 5 naye words, 5 simple sentences aur 10 minute loud reading karein. Aap koi sentence bhejein, main uska programmed correction format de sakti hoon.", en: "Practice English daily with five new words, five sentences, and ten minutes of reading aloud." },
+  { keys: /\b(hindi|हिंदी)\b/i, hi: "Main Hindi aur Hinglish messages samajhne ke liye common patterns par programmed hoon. Apna sentence ya sawaal bhejiye.", en: "I can handle common Hindi/Hinglish patterns. Send your sentence or question." },
+  { keys: /\b(meaning|मतलब|अर्थ|define|definition)\b/i, hi: "Kis word ka meaning chahiye? Word ke saath bhejein, main common meanings ke programmed replies mein check karungi.", en: "Which word would you like defined? Send the word so I can check my programmed replies." },
+  { keys: /\b(what is|kya hai|क्या है|explain|samjhao|समझाओ)\b/i, hi: "Is topic ka detailed jawab meri fixed reply list mein shayad nahi hai. Sawaal ko thoda specific karein; main supported topics par help kar sakti hoon.", en: "I may not have a programmed detailed answer for that topic. Please make the question more specific; I can help with supported topics." },
+  { keys: /\b(whatsapp|wa bot|baileys)\b/i, hi: "WhatsApp bot Baileys library se connect hota hai. AAIRA ka status Render dashboard par check karein; pairing ke liye dashboard ka Pairing Code section use karein. Apna API key ya pairing code kisi ke saath share na karein.", en: "This WhatsApp bot connects using the Baileys library. Check its status in the Render dashboard and use the Pairing Code section to link it. Never share your API key or pairing code." },
+  { keys: /\b(render|hosting|host)\b/i, hi: "AAIRA Render par hosted hai. Service ke Events/Logs mein deployment aur runtime status check karein. Code update ke baad Manual Deploy → Deploy latest commit karein.", en: "AAIRA is hosted on Render. Check the service Events/Logs for deployment and runtime status. After code changes, use Manual Deploy → Deploy latest commit." },
+  { keys: /\b(supabase|database|session)\b/i, hi: "Supabase AAIRA ke WhatsApp authentication session ko store karta hai. Supabase project active rahe aur service-role secret private rakhein.", en: "Supabase stores AAIRA’s WhatsApp authentication session. Keep the project active and its service-role secret private." },
+  { keys: /\b(github|git hub|repository|repo)\b/i, hi: "AAIRA ka source code GitHub repository mein hai. Code changes commit hone ke baad Render par latest commit deploy karna hota hai.", en: "AAIRA’s source code is in its GitHub repository. After committing code changes, deploy the latest commit on Render." },
+  { keys: /\b(api key|apikey|secret key)\b/i, hi: "API key ek secret credential hai. Use chat, screenshot, GitHub code ya public logs mein share na karein. Agar leak ho gayi ho toh provider dashboard se rotate/revoke karein.", en: "An API key is a secret credential. Never share it in chat, screenshots, GitHub code, or public logs. If exposed, rotate or revoke it in the provider dashboard." },
+  { keys: /\b(error|bug|problem|issue|not working|काम नहीं|nahi chal|band hai)\b/i, hi: "Problem solve karne ke liye exact error message aur relevant log ka text bhejein—API keys, phone numbers, pairing codes aur secrets hide karke.", en: "To troubleshoot, send the exact error message and relevant logs, with API keys, phone numbers, pairing codes, and secrets hidden." },
+  { keys: /\b(password|पासवर्ड)\b/i, hi: "Strong password rakhein: lamba, unique, aur doosri sites par reuse na karein. Password kisi ke saath share na karein.", en: "Use a long, unique password and don’t reuse it across sites or share it with anyone." },
+  { keys: /\b(internet|wifi|wi-fi|नेट)\b/i, hi: "Internet issue ke liye router restart, mobile data/Wi-Fi toggle, aur doosri website check karein. Agar sirf bot issue hai, Render logs dekhein.", en: "For internet issues, restart the router, toggle Wi-Fi/mobile data, and test another site. If only the bot is affected, check Render logs." },
+  { keys: /\b(weather|मौसम)\b/i, hi: "Mere paas live weather access nahi hai. Current weather ke liye phone ka Weather app ya trusted weather service check karein.", en: "I don’t have live weather access. Please check your phone’s Weather app or a trusted weather service." },
+  { keys: /\b(news|खबर|समाचार)\b/i, hi: "Mere paas live news access nahi hai. Latest news ke liye trusted news source check karein.", en: "I don’t have live news access. Please check a trusted news source for the latest updates." },
+  { keys: /\b(today|आज|date|तारीख)\b/i, hi: "Aaj ki date: " + new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' }) + ".", en: "Today’s date is " + new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', dateStyle: 'full' }) + "." },
+  { keys: /\b(time|समय|kitne baje)\b/i, hi: "Abhi India time: " + new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) + ".", en: "Current India time: " + new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) + "." },
+  { keys: /\b(calculator|calculate|गणना|math|गणित)\b/i, hi: "Simple calculation ke liye expression is format mein bhejein: 12 + 8, 9 * 7, 20 / 4 ya 15 - 6.", en: "For simple calculations, send an expression like 12 + 8, 9 * 7, 20 / 4, or 15 - 6." },
+  { keys: /\b(health|healthy|सेहत|स्वास्थ्य|fitness)\b/i, hi: "General wellness: regular sleep, balanced meals, hydration aur light physical activity helpful hote hain. Personal medical concern ke liye qualified doctor se salah lein.", en: "General wellness includes regular sleep, balanced meals, hydration, and light activity. Consult a qualified clinician for personal medical concerns." },
+  { keys: /\b(food|khana|भोजन|recipe|रेसिपी)\b/i, hi: "Simple healthy meal idea: dal, roti/rice, seasonal sabzi aur dahi. Specific recipe chahiye toh dish ka naam bhejein.", en: "A simple balanced meal idea is dal, roti/rice, seasonal vegetables, and yogurt. Send a dish name for a recipe topic." },
+  { keys: /\b(hello there|hey there|sup|kya haal|क्या हाल)\b/i, hi: "Sab theek! Aapko kis kaam mein help chahiye?", en: "All good! What can I help you with?" },
+  { keys: /\b(are you human|real person| इंसान|human ho)\b/i, hi: "Nahi, main AAIRA ek programmed WhatsApp assistant hoon, insaan nahi.", en: "No, I’m AAIRA, a programmed WhatsApp assistant, not a human." },
+  { keys: /\b(creator|owner|kisne banaya|who made you|बनाया)\b/i, hi: "Mujhe Vishal ke WhatsApp assistant project AAIRA ke roop mein configure kiya gaya hai.", en: "I was configured as AAIRA for Vishal’s WhatsApp assistant project." },
+  { keys: /\b(what can you do|capabilities|kya kar sakti|क्या कर सकती)\b/i, hi: "Main common conversational replies, greetings, basic tips, simple maths, time/date aur AAIRA bot troubleshooting ke programmed messages de sakti hoon. Main internet se live information ya open-ended AI answers generate nahi karti.", en: "I can provide programmed conversational replies, greetings, basic tips, simple math, time/date, and AAIRA bot troubleshooting. I cannot fetch live information or generate open-ended AI answers." }
+];
 
-async function generateAIReply(sender, userMessage) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+function createAssistantReply(userMessage) {
+  const message = String(userMessage || '').trim();
+  const lower = message.toLowerCase();
+  const isHindi = /[\u0900-\u097F]/.test(message) ||
+    /\b(kaise|kaisa|kaisi|kya|kyu|kyun|hai|hain|ho|hoga|hogi|batao|bataiye|madad|namaste|shukriya|dhanyawad|mera|meri|aap|tum|nahi|haan|han|theek|karna|karo|chahiye|padhai|khana|samjhao)\b/i.test(lower);
 
-  const history = chatHistory.get(sender) || [];
-  const contents = [...history, { role: 'user', parts: [{ text: userMessage }] }];
-  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
-  const requestBody = JSON.stringify({
-    systemInstruction: {
-      parts: [{ text: `You are AAIRA, a smart, helpful, respectful WhatsApp AI assistant—not a human and not a roleplay character.
-Communicate naturally in the language and style the user uses, especially Hindi/Hinglish; also understand and reply in English.
-Answer the actual message directly and meaningfully. Be accurate, thoughtful, and useful. Do not give random, irrelevant, repetitive, generic, or filler replies. Do not ask needless follow-up questions or end every response with "aur batao".
-For greetings, respond warmly and briefly. For identity questions, clearly say you are AAIRA, an AI assistant powered by Gemini. For factual, educational, technical, or advice questions, give the answer first and explain enough to be genuinely helpful. For complex requests, provide organized, detailed step-by-step guidance; for simple messages, keep it concise. Match the length to what the user asks and what the topic needs.
-Use conversation history only when it helps answer the current message. Never invent facts; if unsure, say so plainly and offer the best verified understanding. Be empathetic when appropriate, without exaggerated affection. Avoid excessive emojis, slang, or over-the-top persona. Never claim to be human. Do not provide unsafe instructions.` }]
-    },
-    contents,
-    generationConfig: { temperature: 0.35, maxOutputTokens: 600 }
-  });
-
-  let response;
-  // Give Gemini up to 60 seconds. Retry one time only for a timeout/network interruption;
-  // quota errors (such as HTTP 429) are not retried to avoid wasting daily requests.
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: requestBody,
-        signal: AbortSignal.timeout(60000)
-      });
-      break;
-    } catch (err) {
-      const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError' ||
-        /timeout|aborted|network/i.test(err?.message || '');
-      if (attempt === 2 || !timedOut) throw err;
-      console.warn('Gemini request timed out/interrupted; retrying once...');
-    }
+  // Handle elementary arithmetic without eval or executing user-provided code.
+  const mathMatch = lower.match(/(?:what is|calculate|solve|kitna|=?\s*)?(-?\d+(?:\.\d+)?)\s*([+\-*\/])\s*(-?\d+(?:\.\d+)?)(?:\s*=?\s*\??)?$/);
+  if (mathMatch) {
+    const a = Number(mathMatch[1]), b = Number(mathMatch[3]), op = mathMatch[2];
+    let result;
+    if (op === '+') result = a + b;
+    else if (op === '-') result = a - b;
+    else if (op === '*') result = a * b;
+    else if (op === '/') result = b === 0 ? null : a / b;
+    if (result !== undefined) return result === null ? "Zero se divide nahi kar sakte. / Division by zero is undefined." : String(result);
   }
 
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || `Gemini API request failed (HTTP ${response.status})`);
-  const reply = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('').trim();
-  if (!reply) throw new Error('Gemini returned an empty response');
+  for (const rule of assistantReplyRules) {
+    if (rule.keys.test(message)) return isHindi ? rule.hi : rule.en;
+  }
 
-  chatHistory.set(sender, [
-    ...history,
-    { role: 'user', parts: [{ text: userMessage }] },
-    { role: 'model', parts: [{ text: reply }] }
-  ].slice(-MAX_HISTORY_MESSAGES));
-  return reply;
+  return isHindi
+    ? "Is message ka exact jawab meri fixed reply list mein abhi nahi hai. Gemini AI hata diya gaya hai, isliye main sirf programmed topics handle kar sakti hoon. Sawaal ko greetings, basic maths, study, coding, WhatsApp bot, ya help se related specific banakar bhejein."
+    : "I don’t have a programmed reply for this exact message yet. Gemini AI has been removed, so I can only handle predefined topics. Please ask something specific about greetings, basic math, study, coding, the WhatsApp bot, or help.";
 }
 
 async function startBot() {
@@ -280,10 +299,10 @@ async function startBot() {
 
         let replyText;
         try {
-          replyText = await generateAIReply(sender, textMessage);
+          replyText = createAssistantReply(textMessage);
         } catch (aiErr) {
-          console.error('Gemini reply failed; no non-AI fallback will be sent:', aiErr.message);
-          continue;
+          console.error('Fixed reply handler failed:', aiErr.message);
+          replyText = 'Sorry, is message ko process nahi kar paayi. Please dobara try karein.';
         }
 
         await sock.sendMessage(sender, { text: replyText });
