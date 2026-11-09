@@ -83,6 +83,10 @@ const useSupabaseAuthState = async (sessionId) => {
         state,
         saveCreds: async () => {
             await writeData(state.creds, 'creds');
+        },
+        clearAuthState: async () => {
+            const { error } = await supabase.from('sessions').delete().eq('session_id', sessionId);
+            if (error) throw error;
         }
     };
 };
