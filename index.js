@@ -228,6 +228,8 @@ async function startAccountBot(accountPhone, ownerToken = crypto.randomUUID()) {
       printQRInTerminal: false,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
+      // Restore the browser profile used by the earlier fast pairing flow.
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
     });
     bot.sock = socket;
     socket.ev.on('creds.update', saveCreds);
@@ -369,7 +371,7 @@ app.get('/auto-reply', requireWebLogin, async (req, res) => {
 app.get('/pair', requireWebLogin, async (req, res) => {
   const session = getWebSession(req);
   const phoneNumber = String(req.query.phone || '').replace(/[^0-9]/g, '');
-  if (!/^\d{8,15}$/.test(phoneNumber)) {
+  if (!/^\\d{8,15}$/.test(phoneNumber)) {
     return res.status(400).json({ error: 'WhatsApp number invalid. Country code ke saath digits daalein.' });
   }
   res.setHeader('Cache-Control', 'no-store');
@@ -377,14 +379,13 @@ app.get('/pair', requireWebLogin, async (req, res) => {
   try {
     let bot = await startAccountBot(session.phone);
 
-    // startAccountBot can return before auth/socket initialization completes.
-    // Wait for this account's socket instead of failing immediately on a fast tap.
+    // Keep account-specific socket initialization wait, but restore the earlier direct
+    // pairing-code request: no extra websocket polling or artificial 2.5s delay.
     const readyDeadline = Date.now() + 20000;
     while ((!bot.sock || !bot.sock.authState?.creds) && Date.now() < readyDeadline) {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 250));
       bot = accountBots.get(session.phone) || bot;
     }
-    console.info('[PAIR] Socket readiness check:', Boolean(bot.sock), Boolean(bot.sock?.authState?.creds), bot.connectionStatus);
     if (!bot.sock || !bot.sock.authState?.creds) {
       return res.status(503).json({
         error: bot.connectionStatus === 'Session active elsewhere'
@@ -396,20 +397,7 @@ app.get('/pair', requireWebLogin, async (req, res) => {
       return res.json({ success: true, message: 'WhatsApp session already registered. Re-link ke liye existing session logout karein.' });
     }
 
-    // Baileys pairing-code flow needs the WA websocket to finish opening first.
-    const ws = bot.sock.ws;
-    const wsOpen = () => !ws || ws.readyState === 1;
-    const socketDeadline = Date.now() + 15000;
-    while (!wsOpen() && Date.now() < socketDeadline) {
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-    if (!wsOpen()) {
-      return res.status(503).json({ error: 'WhatsApp server websocket abhi connect nahi hua. 10-15 sec baad dobara try karein.' });
-    }
-
-    // Give Baileys a short moment to complete its initial handshake.
-    await new Promise(resolve => setTimeout(resolve, 2500));
-    console.info('[PAIR] Requesting pairing code from Baileys');
+    console.info('[PAIR] Requesting pairing code directly (legacy fast flow)');
     let code = await bot.sock.requestPairingCode(phoneNumber);
     if (!code) throw new Error('Baileys returned an empty pairing code');
     code = code.match(/.{1,4}/g)?.join('-') || code;
