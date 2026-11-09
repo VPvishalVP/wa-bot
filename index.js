@@ -1,4 +1,5 @@
 const express = require('express');
+const { generateReply } = require('./replyEngine');
 const { default: makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
 const http = require('http');
