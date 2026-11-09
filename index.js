@@ -125,10 +125,11 @@ function getAccountBot(req) {
   return accountBots.get(session.phone) || null;
 }
 
-  const bot = {
-    sock: null,
+async function startAccountBot(accountPhone, ownerToken = crypto.randomUUID()) {
   if (accountBots.has(accountPhone)) return accountBots.get(accountPhone);
   const bot = {
+    ownerToken,
+    leaseTimer: null,
     sock: null,
     connectionStatus: 'Connecting',
     botActive: true,
@@ -144,17 +145,20 @@ function getAccountBot(req) {
       bot.connectionStatus = 'Session active elsewhere';
       console.warn('WhatsApp session lock held by another instance for account:', accountPhone);
       const retryTimer = setTimeout(() => {
+        reconnectTimers.delete(accountPhone);
         if (accountBots.get(accountPhone) === bot) accountBots.delete(accountPhone);
         startAccountBot(accountPhone, bot.ownerToken).catch(err => console.error('Session lock retry failed:', err.message));
       }, 30000);
       reconnectTimers.set(accountPhone, retryTimer);
       return bot;
     }
+
     bot.leaseTimer = setInterval(() => {
       aairaAuth.claimWhatsAppSessionLock(accountPhone, bot.ownerToken, 120)
         .then(ok => { if (!ok) console.error('WhatsApp session lease renewal rejected for account:', accountPhone); })
         .catch(err => console.error('WhatsApp session lease renewal failed:', err.message));
     }, 30000);
+
     const savedSettings = await aairaAuth.getBotSettings(accountPhone);
     bot.botActive = savedSettings.botActive;
     bot.autoReplyEnabled = savedSettings.autoReplyEnabled;
@@ -180,11 +184,13 @@ function getAccountBot(req) {
       } else if (connection === 'close') {
         bot.connectionStatus = 'Disconnected';
         if (bot.leaseTimer) { clearInterval(bot.leaseTimer); bot.leaseTimer = null; }
-        if (statusCode === DisconnectReason.loggedOut) {
-          aairaAuth.releaseWhatsAppSessionLock(accountPhone, bot.ownerToken).catch(err => console.error('Session lock release failed:', err.message));
-        }
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log('WhatsApp closed for account:', accountPhone, statusCode);
+
+        if (statusCode === DisconnectReason.loggedOut) {
+          aairaAuth.releaseWhatsAppSessionLock(accountPhone, bot.ownerToken)
+            .catch(err => console.error('Session lock release failed:', err.message));
+        }
 
         // Ignore stale socket close events and prevent reconnect storms.
         if (accountBots.get(accountPhone) === bot &&
@@ -193,7 +199,6 @@ function getAccountBot(req) {
           const attempt = (reconnectAttempts.get(accountPhone) || 0) + 1;
           reconnectAttempts.set(accountPhone, attempt);
           const isConflict = statusCode === DisconnectReason.connectionReplaced || statusCode === 440;
-          // Replaced sessions need a longer pause; other disconnects use capped exponential backoff.
           const delayMs = isConflict
             ? 60000
             : Math.min(5000 * (2 ** Math.min(attempt - 1, 4)), 60000);
@@ -211,6 +216,7 @@ function getAccountBot(req) {
         }
       }
     });
+
     socket.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify') return;
       for (const msg of messages) {
@@ -234,7 +240,9 @@ function getAccountBot(req) {
     });
     return bot;
   } catch (err) {
-    accountBots.delete(accountPhone);
+    if (bot.leaseTimer) clearInterval(bot.leaseTimer);
+    await aairaAuth.releaseWhatsAppSessionLock(accountPhone, bot.ownerToken).catch(() => {});
+    if (accountBots.get(accountPhone) === bot) accountBots.delete(accountPhone);
     throw err;
   }
 }
