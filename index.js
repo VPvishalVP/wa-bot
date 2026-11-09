@@ -361,6 +361,7 @@ app.get('/pair', requireWebLogin, async (req, res) => {
     return res.status(400).json({ error: 'WhatsApp number invalid. Country code ke saath digits daalein.' });
   }
   res.setHeader('Cache-Control', 'no-store');
+  console.info('[PAIR] Pairing endpoint request received');
   try {
     let bot = await startAccountBot(session.phone);
 
@@ -371,6 +372,7 @@ app.get('/pair', requireWebLogin, async (req, res) => {
       await new Promise(resolve => setTimeout(resolve, 500));
       bot = accountBots.get(session.phone) || bot;
     }
+    console.info('[PAIR] Socket readiness check:', Boolean(bot.sock), Boolean(bot.sock?.authState?.creds), bot.connectionStatus);
     if (!bot.sock || !bot.sock.authState?.creds) {
       return res.status(503).json({
         error: bot.connectionStatus === 'Session active elsewhere'
@@ -395,6 +397,7 @@ app.get('/pair', requireWebLogin, async (req, res) => {
 
     // Give Baileys a short moment to complete its initial handshake.
     await new Promise(resolve => setTimeout(resolve, 2500));
+    console.info('[PAIR] Requesting pairing code from Baileys');
     let code = await bot.sock.requestPairingCode(phoneNumber);
     if (!code) throw new Error('Baileys returned an empty pairing code');
     code = code.match(/.{1,4}/g)?.join('-') || code;
