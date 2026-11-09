@@ -1,8 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
 const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+// Supabase credentials
+const supabaseUrl = 'https://rthezmmpatudgjfahsrv.supabase.co';
+const supabaseKey = 'sb_publishable_dSjC-9dbKcEQYrqkAOcEUw_K9CSpiOt';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -24,7 +25,9 @@ const useSupabaseAuthState = async (sessionId) => {
                 .eq('session_id', sessionId)
                 .eq('key', key)
                 .single();
+
             if (error || !data) return null;
+
             return JSON.parse(data.data, BufferJSON.reviver);
         } catch {
             return null;
@@ -32,7 +35,9 @@ const useSupabaseAuthState = async (sessionId) => {
     };
 
     const removeData = async (key) => {
-        await supabase.from('sessions').delete().eq('session_id', sessionId).eq('key', key);
+        await supabase.from('sessions').delete()
+            .eq('session_id', sessionId)
+            .eq('key', key);
     };
 
     const creds = (await readData('creds')) || initAuthCreds();
@@ -42,20 +47,25 @@ const useSupabaseAuthState = async (sessionId) => {
         keys: {
             get: async (type, ids) => {
                 const data = {};
+
                 await Promise.all(
                     ids.map(async (id) => {
                         let value = await readData(`${type}-${id}`);
                         data[id] = value;
                     })
                 );
+
                 return data;
             },
+
             set: async (data) => {
                 const tasks = [];
+
                 for (const category of Object.keys(data)) {
                     for (const id of Object.keys(data[category])) {
                         const value = data[category][id];
                         const key = `${category}-${id}`;
+
                         if (value) {
                             tasks.push(writeData(value, key));
                         } else {
@@ -63,6 +73,7 @@ const useSupabaseAuthState = async (sessionId) => {
                         }
                     }
                 }
+
                 await Promise.all(tasks);
             }
         }
