@@ -96,15 +96,137 @@ const webSessions=new Map();
 function getWebSession(req){const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('aaira_session='))?.slice(14);const session=token&&webSessions.get(token);if(session&&session.expiresAt>Date.now())return session;if(token)webSessions.delete(token);return null;}
 function requireWebLogin(req,res,next){if(!getWebSession(req))return res.status(401).json({error:'Please login first.'});next();}
 function createWebSession(phone,res){const token=crypto.randomBytes(32).toString('hex');webSessions.set(token,{phone,expiresAt:Date.now()+86400000});res.setHeader('Set-Cookie','aaira_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400');}
-app.post('/api/auth/register',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/\S{6,64}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password 6 se 64 characters ka rakhein (spaces nahi).'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
-app.post('/api/auth/login',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/\S{6,64}$/.test(password))return res.status(400).json({error:'Phone/password format invalid. Password 6-64 characters ka hona chahiye (spaces nahi).'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
+app.post('/api/auth/register',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/\S{6,64}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password 6 se 64 characters ka rakhein (spaces nahi).'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);startAccountBot(phone).catch(err=>console.error('Account bot start failed:',err));res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
+app.post('/api/auth/login',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/\S{6,64}$/.test(password))return res.status(400).json({error:'Phone/password format invalid. Password 6-64 characters ka hona chahiye (spaces nahi).'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);startAccountBot(phone).catch(err=>console.error('Account bot start failed:',err));res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
 app.post('/api/auth/forgot',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');if(!/^\d{10,15}$/.test(phone)||req.body.confirm!=='DELETE')return res.status(400).json({error:'Phone and DELETE confirmation required.'});const result=await aairaAuth.deleteAccount(phone);for(const [token,session] of webSessions){if(session.phone===phone)webSessions.delete(token);}res.json({success:true,message:result==='deleted'?'Stored account data deleted. You can register again.':'Account not found for this number.'});}catch(e){console.error('Delete account error:',e.message);res.status(500).json({error:'Account data delete failed.'});}});
 app.get('/', (req, res) => res.type('html').send(dashboardHtml));
 
-app.get('/api/status', (req, res) => {res.json({success:true,connection:connectionStatus,botActive:isBotActive,autoReplyEnabled:isAutoReplyEnabled,socketReady:!!sock});});
-app.get('/toggle', requireWebLogin, (req, res) => {const action=String(req.query.action||'').toLowerCase();if(action==='on'){isBotActive=true;return res.json({success:true,message:'Bot is now ON ✅',botStatus:'ON'});}if(action==='off'){isBotActive=false;return res.json({success:true,message:'Bot is now OFF ❌',botStatus:'OFF'});}res.json({success:true,botStatus:isBotActive?'ON':'OFF'});});
-app.get('/auto-reply', requireWebLogin, (req, res) => {const action=String(req.query.action||'').toLowerCase();if(action==='on'){isAutoReplyEnabled=true;return res.json({success:true,message:'Auto-reply is now ON ✅',autoReply:'ON'});}if(action==='off'){isAutoReplyEnabled=false;return res.json({success:true,message:'Auto-reply is now OFF ❌',autoReply:'OFF'});}res.json({success:true,autoReply:isAutoReplyEnabled?'ON':'OFF'});});
-app.get('/pair', requireWebLogin, async (req, res) => {const phoneNumber=String(req.query.phone||'').replace(/[^0-9]/g,'');if(!phoneNumber)return res.status(400).json({error:'Phone number required with country code, e.g. 919876543210'});if(!sock||connectionStatus!=='Disconnected'&&!sock.authState?.creds)return res.status(503).json({error:'WhatsApp socket is not ready yet. Wait and try again.'});if(sock.authState.creds.registered)return res.json({success:true,message:'WhatsApp session already registered.'});try{let code=await sock.requestPairingCode(phoneNumber);code=code?.match(/.{1,4}/g)?.join('-')||code;res.json({success:true,pairingCode:code});}catch(err){console.error('Pairing Error:',err);res.status(500).json({error:'Failed to generate pairing code. Check number and try again.'});}});
+const { getChatReply } = require('./chatBank');
+const crypto = require('crypto');
+const aairaAuth = require('./aairaAuth');
+
+const accountBots = new Map();
+
+function getAccountBot(req) {
+  const session = getWebSession(req);
+  if (!session) return null;
+  return accountBots.get(session.phone) || null;
+}
+
+async function startAccountBot(accountPhone) {
+  if (accountBots.has(accountPhone)) return accountBots.get(accountPhone);
+  const bot = {
+    sock: null,
+    connectionStatus: 'Connecting',
+    botActive: false,
+    autoReplyEnabled: false,
+    greetedSenders: new Set()
+  };
+  accountBots.set(accountPhone, bot);
+
+  try {
+    const { state, saveCreds } = await useSupabaseAuthState('account_' + accountPhone);
+    const socket = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+      browser: ['Ubuntu', 'Chrome', '20.0.04']
+    });
+    bot.sock = socket;
+    socket.ev.on('creds.update', saveCreds);
+    socket.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect } = update;
+      if (connection === 'open') {
+        bot.connectionStatus = 'Connected';
+        console.log('WhatsApp connected for account:', accountPhone);
+      } else if (connection === 'connecting') {
+        bot.connectionStatus = 'Connecting';
+      } else if (connection === 'close') {
+        bot.connectionStatus = 'Disconnected';
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        console.log('WhatsApp closed for account:', accountPhone, statusCode);
+        if (statusCode !== DisconnectReason.loggedOut) {
+          accountBots.delete(accountPhone);
+          setTimeout(() => startAccountBot(accountPhone).catch(console.error), 3000);
+        }
+      }
+    });
+    socket.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (type !== 'notify') return;
+      for (const msg of messages) {
+        try {
+          if (!msg.message || msg.key.fromMe) continue;
+          const sender = msg.key.remoteJid;
+          if (!sender || sender === 'status@broadcast' || sender.endsWith('@g.us')) continue;
+          const textMessage = (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || '').trim();
+          if (!textMessage || !bot.botActive || !bot.autoReplyEnabled) continue;
+          const send = (text) => socket.sendMessage(sender, { text });
+          if (!bot.greetedSenders.has(sender)) {
+            await send('*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+            bot.greetedSenders.add(sender);
+          }
+          const replyText = getChatReply(textMessage);
+          if (replyText) await send(replyText);
+        } catch (err) {
+          console.error('Error processing message for account:', accountPhone, err);
+        }
+      }
+    });
+    return bot;
+  } catch (err) {
+    accountBots.delete(accountPhone);
+    throw err;
+  }
+}
+
+app.get('/api/status', requireWebLogin, (req, res) => {
+  const bot = getAccountBot(req);
+  res.json({
+    success: true,
+    connection: bot?.connectionStatus || 'Disconnected',
+    botActive: !!bot?.botActive,
+    autoReplyEnabled: !!bot?.autoReplyEnabled,
+    socketReady: !!bot?.sock
+  });
+});
+
+app.get('/toggle', requireWebLogin, (req, res) => {
+  const bot = getAccountBot(req);
+  if (!bot) return res.status(503).json({ error: 'WhatsApp bot session is not initialized yet.' });
+  const action = String(req.query.action || '').toLowerCase();
+  if (action === 'on') { bot.botActive = true; return res.json({ success: true, message: 'Bot is now ON ✅', botStatus: 'ON' }); }
+  if (action === 'off') { bot.botActive = false; return res.json({ success: true, message: 'Bot is now OFF ❌', botStatus: 'OFF' }); }
+  res.json({ success: true, botStatus: bot.botActive ? 'ON' : 'OFF' });
+});
+
+app.get('/auto-reply', requireWebLogin, (req, res) => {
+  const bot = getAccountBot(req);
+  if (!bot) return res.status(503).json({ error: 'WhatsApp bot session is not initialized yet.' });
+  const action = String(req.query.action || '').toLowerCase();
+  if (action === 'on') { bot.autoReplyEnabled = true; return res.json({ success: true, message: 'Auto-reply is now ON ✅', autoReply: 'ON' }); }
+  if (action === 'off') { bot.autoReplyEnabled = false; return res.json({ success: true, message: 'Auto-reply is now OFF ❌', autoReply: 'OFF' }); }
+  res.json({ success: true, autoReply: bot.autoReplyEnabled ? 'ON' : 'OFF' });
+});
+
+app.get('/pair', requireWebLogin, async (req, res) => {
+  const session = getWebSession(req);
+  const phoneNumber = String(req.query.phone || '').replace(/[^0-9]/g, '');
+  if (!phoneNumber) return res.status(400).json({ error: 'Phone number required with country code, e.g. 919876543210' });
+  try {
+    const bot = await startAccountBot(session.phone);
+    if (!bot.sock || !bot.sock.authState?.creds) return res.status(503).json({ error: 'WhatsApp socket is not ready yet. Wait and try again.' });
+    if (bot.sock.authState.creds.registered) return res.json({ success: true, message: 'WhatsApp session already registered.' });
+    let code = await bot.sock.requestPairingCode(phoneNumber);
+    code = code?.match(/.{1,4}/g)?.join('-') || code;
+    res.json({ success: true, pairingCode: code });
+  } catch (err) {
+    console.error('Pairing Error:', err);
+    res.status(500).json({ error: 'Failed to generate code. Check number and try again.' });
+  }
+});
+
+server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
 
 const { getChatReply } = require('./chatBank');
 const crypto = require('crypto');
