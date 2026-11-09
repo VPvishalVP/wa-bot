@@ -13,10 +13,6 @@ let sock;
 let isBotActive = true;
 let isAutoReplyEnabled = true;
 let connectionStatus = 'Disconnected';
-const greetedUsers = new Set(); // RAM-only; resets after server restart
-
-const WELCOME_MESSAGE =
-  '*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*';
 
 const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -175,7 +171,7 @@ app.get('/pair', async (req, res) => {
 
 // Gemini-powered natural chat. Conversation context stays in server RAM and is limited per sender.
 const chatHistory = new Map();
-const MAX_HISTORY_MESSAGES = 10;
+const MAX_HISTORY_MESSAGES = 12;
 
 async function generateAIReply(sender, userMessage) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -183,22 +179,41 @@ async function generateAIReply(sender, userMessage) {
 
   const history = chatHistory.get(sender) || [];
   const contents = [...history, { role: 'user', parts: [{ text: userMessage }] }];
-
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: `You are AAIRA, a friendly and capable WhatsApp AI assistant. PRIORITY: answer the user's exact question directly, accurately, and usefully. For simple factual questions and full forms, answer in one clear sentence without filler, follow-up questions, or generic chat. Examples: 'MP ka full form?' -> 'Madhya Pradesh.'; 'UP ka full form?' -> 'Uttar Pradesh.'; 'India ki capital?' -> 'New Delhi.' Never respond to a factual question with 'context do', 'aur kya hua', or 'achha sawaal'. For other knowledge questions, give the correct answer first, then a concise explanation. If you are unsure, say you are unsure; do not guess or invent. For casual conversation, be warm, lively, empathetic, and natural. Match the user's language, especially Hindi/Hinglish, and keep responses concise unless the user asks for details. Use supplied chat history only when relevant. Do not claim to be human or provide unsafe instructions.` }]
-      },
-      contents,
-      generationConfig: { temperature: 0.25, maxOutputTokens: 350 }
-    }),
-    signal: AbortSignal.timeout(25000)
+  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
+  const requestBody = JSON.stringify({
+    systemInstruction: {
+      parts: [{ text: `You are AAIRA, a smart, helpful, respectful WhatsApp AI assistant—not a human and not a roleplay character.
+Communicate naturally in the language and style the user uses, especially Hindi/Hinglish; also understand and reply in English.
+Answer the actual message directly and meaningfully. Be accurate, thoughtful, and useful. Do not give random, irrelevant, repetitive, generic, or filler replies. Do not ask needless follow-up questions or end every response with "aur batao".
+For greetings, respond warmly and briefly. For identity questions, clearly say you are AAIRA, an AI assistant powered by Gemini. For factual, educational, technical, or advice questions, give the answer first and explain enough to be genuinely helpful. For complex requests, provide organized, detailed step-by-step guidance; for simple messages, keep it concise. Match the length to what the user asks and what the topic needs.
+Use conversation history only when it helps answer the current message. Never invent facts; if unsure, say so plainly and offer the best verified understanding. Be empathetic when appropriate, without exaggerated affection. Avoid excessive emojis, slang, or over-the-top persona. Never claim to be human. Do not provide unsafe instructions.` }]
+    },
+    contents,
+    generationConfig: { temperature: 0.35, maxOutputTokens: 600 }
   });
 
+  let response;
+  // Give Gemini up to 60 seconds. Retry one time only for a timeout/network interruption;
+  // quota errors (such as HTTP 429) are not retried to avoid wasting daily requests.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: requestBody,
+        signal: AbortSignal.timeout(60000)
+      });
+      break;
+    } catch (err) {
+      const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError' ||
+        /timeout|aborted|network/i.test(err?.message || '');
+      if (attempt === 2 || !timedOut) throw err;
+      console.warn('Gemini request timed out/interrupted; retrying once...');
+    }
+  }
+
   const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || 'Gemini API request failed');
+  if (!response.ok) throw new Error(data?.error?.message || `Gemini API request failed (HTTP ${response.status})`);
   const reply = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('').trim();
   if (!reply) throw new Error('Gemini returned an empty response');
 
@@ -208,42 +223,6 @@ async function generateAIReply(sender, userMessage) {
     { role: 'model', parts: [{ text: reply }] }
   ].slice(-MAX_HISTORY_MESSAGES));
   return reply;
-}
-
-function choose(list) {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-const replyGroups = {
-  greeting: ['Hello dost! 😊 Kya haal hai?', 'Hii! Kaise ho aaj?', 'Arey hello! ❤️', 'Namaste ji 🙏', 'Hey yaar! Kya chal raha hai?'],
-  mood: ['Main badhiya hoon! Tum batao?', 'Sab mast hai yaar, tum kaise ho?', 'Achha hoon 😊 Tum sunao.', 'Tumse baat karke achha lag raha hai.'],
-  happy: ['Arey waah! Ye sunkar bahut achha laga! 😍', 'Mast! Aise hi khush raho!', 'Bahut badhiya yaar! 🎉', 'Proud of you! ❤️'],
-  sad: ['Kya hua dost? Dil ki baat batao.', 'Main sun raha hoon, aaram se batao.', 'Tumhari feelings important hain.', 'Apna khayal rakho dost.'],
-  love: ['Aww, kitni sweet baat hai! ❤️', 'Kisi special ki yaad aa rahi hai? 🥰', 'Cute yaar! ❤️', 'Love is a beautiful feeling!'],
-  funny: ['Hahaha! 😂', 'Bhai tum toh kamaal ho!', 'Hasi nahi ruk rahi! 😂', 'Haha, aur sunao!'],
-  daily: ['Aaj kya kya kiya?', 'Khana kha liya? 😊', 'Abhi kya kar rahe ho?', 'Aaj ka plan kya hai?'],
-  thanks: ['Arey koi baat nahi dost! ❤️', 'Welcome yaar!', 'Khushi hui madad karke 😊', 'Always welcome dost!'],
-  sorry: ['Arey koi baat nahi 😊', 'Its okay dost!', 'Chinta mat karo.', 'No worries!'],
-  question: ['Achha sawaal hai! 😊', 'Iske baare mein thoda aur batao.', 'Chalo isko samajhte hain.', 'Haan ji, pucho!'],
-  goodMorning: ['Good morning dost! 🌞', 'Suprabhat! Aaj ka din shubh ho!', 'Nayi subah, nayi umeed! ✨'],
-  goodNight: ['Good night dost! 🌙', 'Sweet dreams! ❤️', 'Achhi neend lena!'],
-  default: ['Achha! 😊', 'Hmm, samajh raha hoon.', 'Aur kya chal raha hai?', 'Tumhari baat sun raha hoon.', 'Batao dost!']
-};
-
-function detectCategory(t) {
-  if (/^(hi|hello|hey|hii|hlo|namaste|नमस्ते|हाय)$/.test(t)) return 'greeting';
-  if (/good morning|suprabhat|subah bakhair/.test(t)) return 'goodMorning';
-  if (/good night|shubh ratri|sweet dreams/.test(t)) return 'goodNight';
-  if (/kaise ho|how are you|kya haal|haal chaal/.test(t)) return 'mood';
-  if (/khush|happy|mast|maza|awesome|great|wah|waah|congratulations/.test(t)) return 'happy';
-  if (/sad|dukhi|udaas|pareshan|tension|akela|रोना|दुख/.test(t)) return 'sad';
-  if (/love|pyaar|pyar|mohabbat|jaan|miss you|i love you/.test(t)) return 'love';
-  if (/😂|🤣|joke|funny|haha|hahaha|lol/.test(t)) return 'funny';
-  if (/thank|thanks|shukriya|धन्यवाद/.test(t)) return 'thanks';
-  if (/sorry|maaf|गलती/.test(t)) return 'sorry';
-  if (/kya kar|kha liya|khana|din kaisa|plan|breakfast/.test(t)) return 'daily';
-  if (/\?|kya|kyu|kaise|kab|where|why|how|what|who/.test(t)) return 'question';
-  return 'default';
 }
 
 async function startBot() {
@@ -297,11 +276,6 @@ async function startBot() {
         console.log(`[Incoming Message] From: ${sender} | Text: "${textMessage}"`);
         if (!isBotActive) continue;
 
-        // Send the exact welcome message once when a sender first messages AAIRA.
-        if (!greetedUsers.has(sender)) {
-          greetedUsers.add(sender);
-          await sock.sendMessage(sender, { text: WELCOME_MESSAGE });
-        }
         if (!isAutoReplyEnabled) continue;
 
         let replyText;
