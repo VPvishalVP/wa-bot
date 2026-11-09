@@ -117,6 +117,7 @@ const aairaAuth = require('./aairaAuth');
 
 const accountBots = new Map();
 const reconnectTimers = new Map();
+const reconnectAttempts = new Map();
 
 function getAccountBot(req) {
   const session = getWebSession(req);
@@ -155,6 +156,7 @@ async function startAccountBot(accountPhone) {
       const { connection, lastDisconnect } = update;
       if (connection === 'open') {
         bot.connectionStatus = 'Connected';
+        reconnectAttempts.delete(accountPhone);
         console.log('WhatsApp connected for account:', accountPhone);
       } else if (connection === 'connecting') {
         bot.connectionStatus = 'Connecting';
@@ -163,16 +165,28 @@ async function startAccountBot(accountPhone) {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log('WhatsApp closed for account:', accountPhone, statusCode);
 
-        // Ignore stale socket close events; schedule at most one reconnect per account.
-        if (accountBots.get(accountPhone) === bot) {
-          if (statusCode !== DisconnectReason.loggedOut && !reconnectTimers.has(accountPhone)) {
-            const timer = setTimeout(() => {
-              reconnectTimers.delete(accountPhone);
-              if (accountBots.get(accountPhone) === bot) accountBots.delete(accountPhone);
-              startAccountBot(accountPhone).catch(console.error);
-            }, 3000);
-            reconnectTimers.set(accountPhone, timer);
-          }
+        // Ignore stale socket close events and prevent reconnect storms.
+        if (accountBots.get(accountPhone) === bot &&
+            statusCode !== DisconnectReason.loggedOut &&
+            !reconnectTimers.has(accountPhone)) {
+          const attempt = (reconnectAttempts.get(accountPhone) || 0) + 1;
+          reconnectAttempts.set(accountPhone, attempt);
+          const isConflict = statusCode === DisconnectReason.connectionReplaced || statusCode === 440;
+          // Replaced sessions need a longer pause; other disconnects use capped exponential backoff.
+          const delayMs = isConflict
+            ? 60000
+            : Math.min(5000 * (2 ** Math.min(attempt - 1, 4)), 60000);
+          console.log('WhatsApp reconnect scheduled for account:', accountPhone,
+            'in', Math.round(delayMs / 1000), 'seconds (attempt', attempt + ')');
+
+          const timer = setTimeout(() => {
+            reconnectTimers.delete(accountPhone);
+            if (accountBots.get(accountPhone) === bot) accountBots.delete(accountPhone);
+            startAccountBot(accountPhone).catch((err) => {
+              console.error('WhatsApp reconnect failed for account:', accountPhone, err);
+            });
+          }, delayMs);
+          reconnectTimers.set(accountPhone, timer);
         }
       }
     });
