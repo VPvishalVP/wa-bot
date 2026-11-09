@@ -2,6 +2,7 @@ const express = require('express');
 const { default: makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
 const http = require('http');
+const { getCommonChatReply } = require('./commonChatReplies');
 
 const app = express();
 const server = http.createServer(app);
@@ -275,6 +276,9 @@ function createAssistantReply(userMessage) {
     else if (op === '/') result = b === 0 ? null : a / b;
     if (result !== undefined) return result === null ? "Zero se divide nahi kar sakte. / Division by zero is undefined." : String(result);
   }
+
+  const commonReply = getCommonChatReply(message, isHindi);
+  if (commonReply) return commonReply;
 
   for (const rule of assistantReplyRules) {
     if (rule.keys.test(message)) return isHindi ? rule.hi : rule.en;
