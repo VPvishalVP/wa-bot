@@ -357,17 +357,54 @@ app.get('/auto-reply', requireWebLogin, async (req, res) => {
 app.get('/pair', requireWebLogin, async (req, res) => {
   const session = getWebSession(req);
   const phoneNumber = String(req.query.phone || '').replace(/[^0-9]/g, '');
-  if (!phoneNumber) return res.status(400).json({ error: 'Phone number required with country code, e.g. 919876543210' });
+  if (!/^\d{8,15}$/.test(phoneNumber)) {
+    return res.status(400).json({ error: 'WhatsApp number invalid. Country code ke saath digits daalein.' });
+  }
+  res.setHeader('Cache-Control', 'no-store');
   try {
-    const bot = await startAccountBot(session.phone);
-    if (!bot.sock || !bot.sock.authState?.creds) return res.status(503).json({ error: 'WhatsApp socket is not ready yet. Wait and try again.' });
-    if (bot.sock.authState.creds.registered) return res.json({ success: true, message: 'WhatsApp session already registered.' });
+    let bot = await startAccountBot(session.phone);
+
+    // startAccountBot can return before auth/socket initialization completes.
+    // Wait for this account's socket instead of failing immediately on a fast tap.
+    const readyDeadline = Date.now() + 20000;
+    while ((!bot.sock || !bot.sock.authState?.creds) && Date.now() < readyDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      bot = accountBots.get(session.phone) || bot;
+    }
+    if (!bot.sock || !bot.sock.authState?.creds) {
+      return res.status(503).json({
+        error: bot.connectionStatus === 'Session active elsewhere'
+          ? 'WhatsApp session dusre server instance par active hai. Server lock clear/settle hone ka wait karein.'
+          : 'WhatsApp socket initialize nahi hua. Dashboard Refresh karke phir Pairing Code try karein.'
+      });
+    }
+    if (bot.sock.authState.creds.registered) {
+      return res.json({ success: true, message: 'WhatsApp session already registered. Re-link ke liye existing session logout karein.' });
+    }
+
+    // Baileys pairing-code flow needs the WA websocket to finish opening first.
+    const ws = bot.sock.ws;
+    const wsOpen = () => !ws || ws.readyState === 1;
+    const socketDeadline = Date.now() + 15000;
+    while (!wsOpen() && Date.now() < socketDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    if (!wsOpen()) {
+      return res.status(503).json({ error: 'WhatsApp server websocket abhi connect nahi hua. 10-15 sec baad dobara try karein.' });
+    }
+
+    // Give Baileys a short moment to complete its initial handshake.
+    await new Promise(resolve => setTimeout(resolve, 2500));
     let code = await bot.sock.requestPairingCode(phoneNumber);
-    code = code?.match(/.{1,4}/g)?.join('-') || code;
-    res.json({ success: true, pairingCode: code });
+    if (!code) throw new Error('Baileys returned an empty pairing code');
+    code = code.match(/.{1,4}/g)?.join('-') || code;
+    console.log('WhatsApp pairing code generated for dashboard account:', session.phone);
+    return res.json({ success: true, pairingCode: code });
   } catch (err) {
-    console.error('Pairing Error:', err);
-    res.status(500).json({ error: 'Failed to generate code. Check number and try again.' });
+    console.error('Pairing Error:', err?.message || err);
+    return res.status(500).json({
+      error: 'Pairing code generate nahi hua: ' + String(err?.message || 'unknown error').slice(0, 180)
+    });
   }
 });
 
