@@ -1,4 +1,3 @@
-
 const express = require('express');
 const { default: makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
@@ -6,477 +5,297 @@ const http = require('http');
 
 const app = express();
 const server = http.createServer(app);
-
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
 let sock;
 let isBotActive = true;
+let isAutoReplyEnabled = true;
+let connectionStatus = 'Disconnected';
+const greetedUsers = new Set(); // RAM-only; resets after server restart
 
-// Root Route - Status Check
-app.get('/', (req, res) => {
-    res.send(`WhatsApp Bot is Running! 🚀 | Status: ${isBotActive ? 'ON ✅' : 'OFF ❌'}`);
+const WELCOME_MESSAGE =
+  'Heyy! 💗\\nMai VIHUHUHU KA OFFLINE ASSISTANT 😴✨\\nAI HU MERA NAME AAIRA HAI';
+
+const dashboardHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AAIRA | WhatsApp Assistant</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:#f4f4f4;font-family:Arial,sans-serif;
+background:radial-gradient(ellipse at 75% 15%,#343434 0%,transparent 32%),
+radial-gradient(ellipse at 15% 80%,#242424 0%,transparent 35%),linear-gradient(135deg,#000,#101010 55%,#000)}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;
+background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.045) 50%,transparent 65%)}
+.wrap{width:min(940px,94%);margin:30px auto}
+header{text-align:center;padding:25px 10px}
+.logo{font-size:38px;font-weight:900;letter-spacing:5px;text-shadow:0 0 18px #ddd}
+.subtitle{color:#aaa;letter-spacing:2px;margin-top:8px}
+.panel{background:rgba(15,15,15,.94);border:1px solid #555;border-radius:18px;
+padding:22px;margin:16px 0;box-shadow:0 0 22px rgba(255,255,255,.06)}
+h2{font-size:17px;letter-spacing:1.5px;margin:0 0 16px;color:#eee}
+.status{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{border:1px solid #777;border-radius:30px;padding:8px 14px;font-size:13px}
+.green{color:#cfcfcf;border-color:#aaa}.red{color:#999;border-color:#555}
+input{width:100%;background:#050505;color:white;border:1px solid #666;border-radius:10px;
+padding:13px;margin:8px 0 12px;font-size:15px;outline:none}
+input:focus{border-color:#eee;box-shadow:0 0 8px #777}
+button{background:#080808;color:#fff;border:1px solid #aaa;border-radius:10px;
+padding:12px 16px;margin:4px;cursor:pointer;font-weight:bold;transition:.2s}
+button:hover{background:#eee;color:#000;box-shadow:0 0 14px #aaa}
+button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row button{flex:1}
+.code{font-size:26px;letter-spacing:5px;text-align:center;padding:15px;color:#fff;
+border:1px dashed #aaa;border-radius:12px;margin-top:12px;min-height:60px}
+.note{font-size:12px;color:#aaa;line-height:1.6}
+pre{white-space:pre-wrap;color:#ddd;font-size:13px}
+footer{text-align:center;color:#777;padding:20px;font-size:12px}
+</style>
+</head>
+<body><div class="wrap">
+<header><div class="logo">AAIRA ✦</div><div class="subtitle">VIHUHUHU KA OFFLINE ASSISTANT</div></header>
+<section class="panel">
+<div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected</span></div>
+<div class="status"><span>Bot Status</span><span id="bot" class="pill">Checking...</span></div>
+<div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
+<div class="row" style="margin-top:15px"><button onclick="toggleBot('on')">BOT ON</button><button onclick="toggleBot('off')">BOT OFF</button></div>
+<div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
+<button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
+</section>
+<section class="panel">
+<h2>🔑 REFERENCE PAIRING CODE</h2>
+<label for="phone">WhatsApp number (country code ke saath)</label>
+<input id="phone" inputmode="numeric" placeholder="Example: 919876543210">
+<button onclick="getPairCode()" style="width:100%">GENERATE PAIRING CODE</button>
+<div id="pairCode" class="code">----</div>
+<p class="note">Code milne par WhatsApp mein Linked Devices → Link a device → Link with phone number se enter karein. Number digits only, country code ke saath.</p>
+</section>
+<section class="panel">
+<h2>📋 AAIRA MENU / STATUS</h2>
+<pre>!ping  — Check bot reply
+!menu  — Show commands
+Welcome message — First message from each sender
+Smart auto reply — Hindi/Hinglish template replies</pre>
+<p class="note">Dashboard theme: Gothic Dark • Black & White • Silver glow</p>
+</section>
+<footer>AAIRA • Gothic Dark Theme</footer>
+</div>
+<script>
+async function refreshStatus(){
+ try{
+  const r=await fetch('/api/status');const d=await r.json();
+  const c=document.getElementById('connection');c.textContent=d.connection;
+  c.className='pill '+(d.connection==='Connected'?'green':'red');
+  document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';
+  document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';
+ }catch(e){document.getElementById('connection').textContent='Status unavailable'}
+}
+async function toggleBot(action){
+ const r=await fetch('/toggle?action='+action);const d=await r.json();alert(d.message||d.botStatus);refreshStatus();
+}
+async function toggleAuto(action){
+ const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus();
+}
+async function getPairCode(){
+ const phone=document.getElementById('phone').value.replace(/\\D/g,'');
+ const box=document.getElementById('pairCode');
+ if(!phone){alert('WhatsApp number enter karein');return}
+ box.textContent='Generating...';
+ try{
+  const r=await fetch('/pair?phone='+encodeURIComponent(phone));const d=await r.json();
+  box.textContent=d.pairingCode||d.message||d.error||'Could not generate code';
+  if(!r.ok)alert(d.error||'Pairing code error');
+ }catch(e){box.textContent='Request failed';alert('Server se connection nahi hua')}
+}
+refreshStatus();setInterval(refreshStatus,10000);
+</script></body></html>`;
+
+app.get('/', (req, res) => res.type('html').send(dashboardHtml));
+
+app.get('/api/status', (req, res) => {
+  res.json({
+    success: true,
+    connection: connectionStatus,
+    botActive: isBotActive,
+    autoReplyEnabled: isAutoReplyEnabled,
+    socketReady: !!sock
+  });
 });
 
-// Chat ON/OFF Toggle Route
 app.get('/toggle', (req, res) => {
-    const action = req.query.action;
-
-    if (action === 'on') {
-        isBotActive = true;
-        return res.json({
-            success: true,
-            message: 'Bot is now ON ✅'
-        });
-    }
-
-    if (action === 'off') {
-        isBotActive = false;
-        return res.json({
-            success: true,
-            message: 'Bot is now OFF ❌'
-        });
-    }
-
-    res.json({
-        success: true,
-        botStatus: isBotActive ? 'ON' : 'OFF'
-    });
+  const action = String(req.query.action || '').toLowerCase();
+  if (action === 'on') {
+    isBotActive = true;
+    return res.json({ success: true, message: 'Bot is now ON ✅', botStatus: 'ON' });
+  }
+  if (action === 'off') {
+    isBotActive = false;
+    return res.json({ success: true, message: 'Bot is now OFF ❌', botStatus: 'OFF' });
+  }
+  res.json({ success: true, botStatus: isBotActive ? 'ON' : 'OFF' });
 });
 
-// Pairing Code Route
+app.get('/auto-reply', (req, res) => {
+  const action = String(req.query.action || '').toLowerCase();
+  if (action === 'on') {
+    isAutoReplyEnabled = true;
+    return res.json({ success: true, message: 'Auto-reply is now ON ✅', autoReply: 'ON' });
+  }
+  if (action === 'off') {
+    isAutoReplyEnabled = false;
+    return res.json({ success: true, message: 'Auto-reply is now OFF ❌', autoReply: 'OFF' });
+  }
+  res.json({ success: true, autoReply: isAutoReplyEnabled ? 'ON' : 'OFF' });
+});
+
 app.get('/pair', async (req, res) => {
-    const phoneNumber = req.query.phone;
-
-    if (!phoneNumber) {
-        return res.status(400).json({
-            error: 'Phone number is required (e.g., ?phone=919876543210)'
-        });
-    }
-
-    if (!sock) {
-        return res.status(503).json({
-            error: 'WhatsApp socket is not ready yet'
-        });
-    }
-
-    if (!sock.authState.creds.registered) {
-        try {
-            let code = await sock.requestPairingCode(
-                phoneNumber.replace(/[^0-9]/g, '')
-            );
-
-            code = code?.match(/.{1,4}/g)?.join('-') || code;
-
-            return res.json({
-                success: true,
-                pairingCode: code
-            });
-
-        } catch (err) {
-            console.log('Pairing Error:', err);
-
-            return res.status(500).json({
-                error: 'Failed to generate pairing code'
-            });
-        }
-    } else {
-        return res.json({
-            success: true,
-            message: 'Already registered and connected!'
-        });
-    }
+  const phoneNumber = String(req.query.phone || '').replace(/[^0-9]/g, '');
+  if (!phoneNumber) {
+    return res.status(400).json({ error: 'Phone number required with country code, e.g. 919876543210' });
+  }
+  if (!sock || connectionStatus !== 'Disconnected' && !sock.authState?.creds) {
+    return res.status(503).json({ error: 'WhatsApp socket is not ready yet. Wait and try again.' });
+  }
+  if (sock.authState.creds.registered) {
+    return res.json({ success: true, message: 'WhatsApp session already registered.' });
+  }
+  try {
+    let code = await sock.requestPairingCode(phoneNumber);
+    code = code?.match(/.{1,4}/g)?.join('-') || code;
+    res.json({ success: true, pairingCode: code });
+  } catch (err) {
+    console.error('Pairing Error:', err);
+    res.status(500).json({ error: 'Failed to generate pairing code. Check number and try again.' });
+  }
 });
 
-async function startBot() {
-    const { state, saveCreds } = await useSupabaseAuthState('bot_session');
-
-    sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: false,
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
-    });
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-
-        if (connection === 'open') {
-            console.log('WhatsApp Connected Successfully via Supabase! ✅');
-        }
-
-        if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-
-            console.log('Connection closed, reconnecting...', statusCode);
-
-            if (statusCode !== DisconnectReason.loggedOut) {
-                setTimeout(() => startBot(), 3000);
-            }
-        }
-    });
-
-    // Smart Message Handler & Bot ON/OFF Handler
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-
-        for (const msg of messages) {
-            try {
-                if (!msg.message || msg.key.fromMe) continue;
-
-                if (msg.key.remoteJid === 'status@broadcast') continue;
-
-                const sender = msg.key.remoteJid;
-
-                const textMessage = (
-                    msg.message.conversation ||
-                    msg.message.extendedTextMessage?.text ||
-                    msg.message.imageMessage?.caption ||
-                    ''
-                ).trim().toLowerCase();
-
-                if (!textMessage) continue;
-
-                console.log(`[Incoming Message] From: ${sender} | Text: "${textMessage}"`);
-
-                // Bot OFF hone par auto replies band
-                if (!isBotActive) continue;
-
-                // Command Handler
-                if (textMessage === '!ping') {
-                    await sock.sendMessage(sender, {
-                        text: 'Pong! 🏓 Bot is active and running.'
-                    });
-                    continue;
-                }
-
-                if (textMessage === '!menu') {
-                    await sock.sendMessage(sender, {
-                        text: '🤖 *WhatsApp Bot Menu*\n\n' +
-                              '1. !ping - Check bot status\n' +
-                              '2. !menu - Show commands\n' +
-                              '3. Smart Auto Reply - Automatic chatting\n\n' +
-                              'Bot Status: ON ✅'
-                    });
-                    continue;
-                }
-
-                let replyText = '';
-
-                const replies = {
-                    greeting: [
-                        'Hello dost! 😊 Kya haal hai?',
-                        'Hii! Kaise ho aaj?',
-                        'Arey hello! ❤️',
-                        'Namaste ji 🙏',
-                        'Hey yaar! Kya chal raha hai?',
-                        'Hii! Bahut din baad baat hui.',
-                        'Hello hello! Batao kya haal?',
-                        'Aao baat karte hain 😊',
-                        'Hii dost! Sab badhiya?',
-                        'Hey! Aaj ka din kaisa hai?',
-                        'Hello ji! Kaise ho?',
-                        'Hey buddy!',
-                        'Kya haal hai mere dost?',
-                        'Hii! Bolo kya baat hai?',
-                        'Arey wah! Tum aa gaye!'
-                    ],
-
-                    mood: [
-                        'Main badhiya hoon! Tum batao?',
-                        'Sab mast hai yaar, tum kaise ho?',
-                        'Achha hoon 😊 Tum sunao.',
-                        'Tumse baat karke achha lag raha hai.',
-                        'Bas yahin hoon, tumhari baat sun raha hoon.',
-                        'Kya haal chaal hain dost?',
-                        'Life kaisi chal rahi hai?',
-                        'Aaj mood kaisa hai tumhara?',
-                        'Sab theek hai na?',
-                        'Batao, kya chal raha hai?',
-                        'Ekdam mast! Tum kaise ho?',
-                        'Badhiya ji, aap batao?',
-                        'Main theek hoon, tumhari sunao.',
-                        'Aaj ka din achha ja raha hai.',
-                        'Tumse baat karne ke liye ready hoon!'
-                    ],
-
-                    happy: [
-                        'Arey waah! Ye sunkar bahut achha laga! 😍',
-                        'Kya baat hai! Khushi bani rahe!',
-                        'Mast! Aise hi khush raho!',
-                        'Tumhari khushi dekhkar achha laga!',
-                        'Bahut badhiya yaar!',
-                        'Aaj toh celebration banta hai! 🎉',
-                        'Keep smiling dost!',
-                        'Ye hui na baat!',
-                        'Khush rehna sabse zaroori hai!',
-                        'Waah! Dil khush kar diya!',
-                        'Bahut achhi news hai!',
-                        'Congratulations dost!',
-                        'Aise hi progress karte raho!',
-                        'Kamaal kar diya!',
-                        'Proud of you! ❤️'
-                    ],
-
-                    sad: [
-                        'Kya hua dost? Dil ki baat batao.',
-                        'Main sun raha hoon, aaram se batao.',
-                        'Kabhi kabhi din mushkil hote hain.',
-                        'Tumhari feelings important hain.',
-                        'Agar share karna chaho toh bata sakte ho.',
-                        'Kya kisi baat ne pareshan kiya hai?',
-                        'Thoda waqt lena bhi theek hai.',
-                        'Tum akele nahi ho, baat kar sakte ho.',
-                        'Dil halka karna chaho toh main sun raha hoon.',
-                        'Umeed hai cheezein dheere dheere behtar hongi.',
-                        'Sab kuch ek saath solve karna zaroori nahi.',
-                        'Apna khayal rakho dost.',
-                        'Kya hua? Kisi ne kuch kaha?',
-                        'Main tumhari baat samajhna chahta hoon.',
-                        'Thoda rest kar lo, yaar.'
-                    ],
-
-                    love: [
-                        'Aww, kitni sweet baat hai! ❤️',
-                        'Dil se kaha hai kya? 😊',
-                        'Pyaar wali baat lag rahi hai!',
-                        'Kya khoobsurat feeling hai!',
-                        'Aaj toh romantic mood hai!',
-                        'Kisi special ki yaad aa rahi hai?',
-                        'Love is a beautiful feeling!',
-                        'Waah, dil ki baat hai!',
-                        'Cute yaar! ❤️',
-                        'Achha ji, aur batao!',
-                        'Kya baat hai, pyaar ho gaya?',
-                        'Dil ki baatein hain!',
-                        'Aaj feelings strong hain!',
-                        'Kitni pyari baat kahi!',
-                        'Romantic vibes! 🥰'
-                    ],
-
-                    funny: [
-                        'Hahaha! 😂',
-                        'Arey yaar, kya baat hai!',
-                        'Bhai tum toh kamaal ho!',
-                        'Ye toh mast tha!',
-                        'Hasi nahi ruk rahi! 😂',
-                        'Comedy king ho tum!',
-                        'Kya joke maara hai!',
-                        'Haha, aur sunao!',
-                        'Mood bana diya!',
-                        'Badiya yaar!',
-                        'LOL 😂',
-                        'Tum toh bade funny ho!',
-                        'Ek aur joke sunao!',
-                        'Hahaha, sahi hai!',
-                        'Bhai gazab!'
-                    ],
-
-                    daily: [
-                        'Aaj kya kya kiya?',
-                        'Din kaisa raha tumhara?',
-                        'Khana kha liya? 😊',
-                        'Aaj kuch naya hua?',
-                        'Abhi kya kar rahe ho?',
-                        'Aaj ka plan kya hai?',
-                        'Kuch interesting batao!',
-                        'Kaam kaisa chal raha hai?',
-                        'Aaj relax kar rahe ho ya busy ho?',
-                        'Aur sunao, sab badhiya?',
-                        'Breakfast kiya?',
-                        'Aaj ghar par ho?',
-                        'Kya chal raha hai life mein?',
-                        'Aaj ka din kaisa tha?',
-                        'Kal ka kya plan hai?'
-                    ],
-
-                    thanks: [
-                        'Arey koi baat nahi dost! ❤️',
-                        'Welcome yaar!',
-                        'Khushi hui madad karke 😊',
-                        'Kabhi bhi!',
-                        'Arey thanks ki kya baat hai!',
-                        'Tumhara welcome hai!',
-                        'Always welcome dost!',
-                        'Bas khush raho!',
-                        'Koi tension nahi!',
-                        'Achha laga sunke!',
-                        'Mention not!',
-                        'No problem!',
-                        'Arey apne logon mein thanks kaisa!',
-                        'Glad to help!',
-                        'Koi baat nahi bhai!'
-                    ],
-
-                    sorry: [
-                        'Arey koi baat nahi 😊',
-                        'Its okay dost!',
-                        'Chinta mat karo.',
-                        'Sab theek hai!',
-                        'Maaf kiya yaar ❤️',
-                        'Koi problem nahi!',
-                        'Relax, sab normal hai.',
-                        'It happens!',
-                        'Dil pe mat lo.',
-                        'Sab badhiya hai dost!',
-                        'No worries!',
-                        'Koi baat nahi bhai!',
-                        'Chill karo!',
-                        'Sab theek hai.',
-                        'Arey rehne do!'
-                    ],
-
-                    question: [
-                        'Achha sawaal hai! 😊',
-                        'Iske baare mein thoda aur batao.',
-                        'Tum kya sochte ho is baare mein?',
-                        'Chalo isko samajhte hain.',
-                        'Interesting! Aage batao.',
-                        'Thoda context doge?',
-                        'Tumhara point samajh aaya.',
-                        'Kya tum iske baare mein detail mein baat karna chahoge?',
-                        'Chalo, baat karte hain!',
-                        'Haan ji, pucho!',
-                        'Batao kya jaan na hai?',
-                        'Achha, ye kaise?',
-                        'Hmm, interesting question!',
-                        'Iska jawab dhoondhte hain.',
-                        'Kya tum detail mein bata sakte ho?'
-                    ],
-
-                    default: [
-                        'Achha! 😊',
-                        'Hmm, samajh raha hoon.',
-                        'Achha ji, aage batao.',
-                        'Aur kya chal raha hai?',
-                        'Interesting baat hai!',
-                        'Tumhari baat sun raha hoon.',
-                        'Achha, phir kya hua?',
-                        'Kuch aur batao dost.',
-                        'Haan ji, bolo!',
-                        'Main yahin hoon, baat karo.',
-                        'Sahi hai yaar!',
-                        'Achha achha!',
-                        'Hmm, phir?',
-                        'Batao dost!',
-                        'Aur sunao!'
-                    ],
-
-                    goodMorning: [
-                        'Good morning dost! 🌞',
-                        'Suprabhat! Aaj ka din shubh ho!',
-                        'Good morning! Smile karo 😊',
-                        'Subah ki shubhkamnayein!',
-                        'Utho aur chamko! ✨',
-                        'Aaj ka din tumhara hai!',
-                        'Morning! Kya haal hai?',
-                        'Nayi subah, nayi umeed!',
-                        'Good morning! Khush raho!',
-                        'Good morning! Aaj kya plan hai?'
-                    ],
-
-                    goodNight: [
-                        'Good night dost! 🌙',
-                        'Shubh ratri! Achhe sapne dekhna.',
-                        'Sweet dreams! ❤️',
-                        'Aaram se sona.',
-                        'Good night, kal milte hain!',
-                        'Sapno ki duniya mein milte hain!',
-                        'Take care, good night!',
-                        'Achhi neend lena!',
-                        'Night night! 😊',
-                        'Kal ka din achha ho!'
-                    ]
-                };
-
-                // Message Category Detection
-                let category = 'default';
-
-                if (/^(hi|hello|hey|hii|hlo|namaste|नमस्ते|हाय)$/.test(textMessage)) {
-                    category = 'greeting';
-                }
-                else if (/good morning|suprabhat|subah bakhair/.test(textMessage)) {
-                    category = 'goodMorning';
-                }
-                else if (/good night|shubh ratri|sweet dreams/.test(textMessage)) {
-                    category = 'goodNight';
-                }
-                else if (/kaise ho|how are you|kya haal|haal chaal/.test(textMessage)) {
-                    category = 'mood';
-                }
-                else if (/khush|happy|mast|maza|awesome|great|wah|waah|congratulations/.test(textMessage)) {
-                    category = 'happy';
-                }
-                else if (/sad|dukhi|udaas|pareshan|tension|akela|रोना|दुख/.test(textMessage)) {
-                    category = 'sad';
-                }
-                else if (/love|pyaar|pyar|mohabbat|jaan|miss you|i love you/.test(textMessage)) {
-                    category = 'love';
-                }
-                else if (/😂|🤣|joke|funny|haha|hahaha|lol/.test(textMessage)) {
-                    category = 'funny';
-                }
-                else if (/thank|thanks|shukriya|धन्यवाद/.test(textMessage)) {
-                    category = 'thanks';
-                }
-                else if (/sorry|maaf|गलती/.test(textMessage)) {
-                    category = 'sorry';
-                }
-                else if (/kya kar|kha liya|khana|din kaisa|plan|breakfast/.test(textMessage)) {
-                    category = 'daily';
-                }
-                else if (/\?|kya|kyu|kaise|kab|where|why|how|what|who/.test(textMessage)) {
-                    category = 'question';
-                }
-
-                const pool = replies[category] || replies.default;
-
-                const randomReply = pool[Math.floor(Math.random() * pool.length)];
-
-                const followups = [
-                    'Tum batao?',
-                    'Aur sunao!',
-                    'Phir kya hua?',
-                    'Kya sochte ho?',
-                    'Thoda aur batao.',
-                    'Main sun raha hoon.',
-                    'Aage bolo!',
-                    'Kya baat hai?',
-                    'Batao dost!',
-                    'Achha ji!'
-                ];
-
-                const endings = [
-                    ' 😊', ' ❤️', ' 😄', ' ✨', ' 🤗',
-                    ' 💫', ' 🌸', ' 😎', ' 🥰', ' 🙌'
-                ];
-
-                const randomFollowup = followups[Math.floor(Math.random() * followups.length)];
-
-                const randomEnding = endings[Math.floor(Math.random() * endings.length)];
-
-                replyText = `${randomReply} ${randomFollowup}${randomEnding}`;
-
-                await sock.sendMessage(sender, {
-                    text: replyText
-                });
-
-                console.log(`[Reply Sent Successfully]\n`);
-
-            } catch (err) {
-                console.log('Error processing message:', err);
-            }
-        }
-    });
+function choose(list) {
+  return list[Math.floor(Math.random() * list.length)];
 }
 
-// Start Server
+const replyGroups = {
+  greeting: ['Hello dost! 😊 Kya haal hai?', 'Hii! Kaise ho aaj?', 'Arey hello! ❤️', 'Namaste ji 🙏', 'Hey yaar! Kya chal raha hai?'],
+  mood: ['Main badhiya hoon! Tum batao?', 'Sab mast hai yaar, tum kaise ho?', 'Achha hoon 😊 Tum sunao.', 'Tumse baat karke achha lag raha hai.'],
+  happy: ['Arey waah! Ye sunkar bahut achha laga! 😍', 'Mast! Aise hi khush raho!', 'Bahut badhiya yaar! 🎉', 'Proud of you! ❤️'],
+  sad: ['Kya hua dost? Dil ki baat batao.', 'Main sun raha hoon, aaram se batao.', 'Tumhari feelings important hain.', 'Apna khayal rakho dost.'],
+  love: ['Aww, kitni sweet baat hai! ❤️', 'Kisi special ki yaad aa rahi hai? 🥰', 'Cute yaar! ❤️', 'Love is a beautiful feeling!'],
+  funny: ['Hahaha! 😂', 'Bhai tum toh kamaal ho!', 'Hasi nahi ruk rahi! 😂', 'Haha, aur sunao!'],
+  daily: ['Aaj kya kya kiya?', 'Khana kha liya? 😊', 'Abhi kya kar rahe ho?', 'Aaj ka plan kya hai?'],
+  thanks: ['Arey koi baat nahi dost! ❤️', 'Welcome yaar!', 'Khushi hui madad karke 😊', 'Always welcome dost!'],
+  sorry: ['Arey koi baat nahi 😊', 'Its okay dost!', 'Chinta mat karo.', 'No worries!'],
+  question: ['Achha sawaal hai! 😊', 'Iske baare mein thoda aur batao.', 'Chalo isko samajhte hain.', 'Haan ji, pucho!'],
+  goodMorning: ['Good morning dost! 🌞', 'Suprabhat! Aaj ka din shubh ho!', 'Nayi subah, nayi umeed! ✨'],
+  goodNight: ['Good night dost! 🌙', 'Sweet dreams! ❤️', 'Achhi neend lena!'],
+  default: ['Achha! 😊', 'Hmm, samajh raha hoon.', 'Aur kya chal raha hai?', 'Tumhari baat sun raha hoon.', 'Batao dost!']
+};
+
+function detectCategory(t) {
+  if (/^(hi|hello|hey|hii|hlo|namaste|नमस्ते|हाय)$/.test(t)) return 'greeting';
+  if (/good morning|suprabhat|subah bakhair/.test(t)) return 'goodMorning';
+  if (/good night|shubh ratri|sweet dreams/.test(t)) return 'goodNight';
+  if (/kaise ho|how are you|kya haal|haal chaal/.test(t)) return 'mood';
+  if (/khush|happy|mast|maza|awesome|great|wah|waah|congratulations/.test(t)) return 'happy';
+  if (/sad|dukhi|udaas|pareshan|tension|akela|रोना|दुख/.test(t)) return 'sad';
+  if (/love|pyaar|pyar|mohabbat|jaan|miss you|i love you/.test(t)) return 'love';
+  if (/😂|🤣|joke|funny|haha|hahaha|lol/.test(t)) return 'funny';
+  if (/thank|thanks|shukriya|धन्यवाद/.test(t)) return 'thanks';
+  if (/sorry|maaf|गलती/.test(t)) return 'sorry';
+  if (/kya kar|kha liya|khana|din kaisa|plan|breakfast/.test(t)) return 'daily';
+  if (/\?|kya|kyu|kaise|kab|where|why|how|what|who/.test(t)) return 'question';
+  return 'default';
+}
+
+async function startBot() {
+  const { state, saveCreds } = await useSupabaseAuthState('bot_session');
+  sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: false,
+    connectTimeoutMs: 60000,
+    keepAliveIntervalMs: 25000,
+    browser: ['Ubuntu', 'Chrome', '20.0.04']
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === 'open') {
+      connectionStatus = 'Connected';
+      console.log('WhatsApp Connected Successfully via Supabase! ✅');
+    }
+    if (connection === 'connecting') connectionStatus = 'Connecting';
+    if (connection === 'close') {
+      connectionStatus = 'Disconnected';
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      console.log('Connection closed:', statusCode);
+      if (statusCode !== DisconnectReason.loggedOut) {
+        setTimeout(() => startBot().catch(console.error), 3000);
+      } else {
+        console.log('Logged out. Re-pair required.');
+      }
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+    for (const msg of messages) {
+      try {
+        if (!msg.message || msg.key.fromMe) continue;
+        const sender = msg.key.remoteJid;
+        if (!sender || sender === 'status@broadcast' || sender.endsWith('@g.us')) continue;
+
+        const textMessage = (
+          msg.message.conversation ||
+          msg.message.extendedTextMessage?.text ||
+          msg.message.imageMessage?.caption ||
+          msg.message.videoMessage?.caption ||
+          ''
+        ).trim().toLowerCase();
+        if (!textMessage) continue;
+
+        console.log(`[Incoming Message] From: ${sender} | Text: "${textMessage}"`);
+        if (!isBotActive) continue;
+
+        if (textMessage === '!ping') {
+          await sock.sendMessage(sender, { text: 'Pong! 🏓 Bot is active and running.' });
+          continue;
+        }
+        if (textMessage === '!menu') {
+          await sock.sendMessage(sender, {
+            text: '🤖 *AAIRA WhatsApp Bot Menu*\\n\\n!ping - Check bot status\\n!menu - Show commands\\nSmart Auto Reply - Automatic chatting\\n\\nBot Status: ON ✅'
+          });
+          continue;
+        }
+
+        // First message per sender (RAM memory): welcome text only, no audio/voice.
+        if (!greetedUsers.has(sender)) {
+          greetedUsers.add(sender);
+          await sock.sendMessage(sender, { text: WELCOME_MESSAGE });
+          continue;
+        }
+
+        if (!isAutoReplyEnabled) continue;
+
+        const category = detectCategory(textMessage);
+        const randomReply = choose(replyGroups[category] || replyGroups.default);
+        const followups = ['Tum batao?', 'Aur sunao!', 'Phir kya hua?', 'Thoda aur batao.', 'Main sun raha hoon.'];
+        const endings = [' 😊', ' ❤️', ' 😄', ' ✨', ' 🤗', ' 🌸', ' 🥰'];
+        const replyText = `${randomReply} ${choose(followups)}${choose(endings)}`;
+
+        await sock.sendMessage(sender, { text: replyText });
+        console.log('[Reply Sent Successfully]');
+      } catch (err) {
+        console.error('Error processing message:', err);
+      }
+    }
+  });
+}
+
 server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    startBot();
+  console.log(`Server is running on port ${PORT}`);
+  startBot().catch(console.error);
 });
-                
