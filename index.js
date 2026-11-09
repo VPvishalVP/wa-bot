@@ -309,8 +309,11 @@ async function startBot() {
           continue;
         }
 
-        // Mark sender greeted, then answer with Gemini AI on every incoming chat message.
-        if (!greetedUsers.has(sender)) greetedUsers.add(sender);
+        // Send the exact welcome message once when a sender first messages AAIRA.
+        if (!greetedUsers.has(sender)) {
+          greetedUsers.add(sender);
+          await sock.sendMessage(sender, { text: WELCOME_MESSAGE });
+        }
         if (!isAutoReplyEnabled) continue;
 
         let replyText;
