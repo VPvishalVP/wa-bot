@@ -81,7 +81,7 @@ AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <footer>AAIRA • Gothic Dark Theme</footer>
 </div>
 <script>
-async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok)document.getElementById('authGate').style.display='none';}catch(e){msg.textContent='Server connection failed.'}}
+async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok){document.getElementById('authGate').style.display='none';document.getElementById('phone').value=phone;refreshStatus();}}catch(e){msg.textContent='Server connection failed.'}}
 async function forgotAccount(){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)){alert('Phone number country code ke saath enter karein.');return}if(prompt('Account data permanently delete karne ke liye DELETE type karein:')!=='DELETE')return;try{const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,confirm:'DELETE'})});const d=await r.json();document.getElementById('authMessage').textContent=d.message||d.error||'Done';}catch(e){document.getElementById('authMessage').textContent='Server connection failed.'}}
 async function refreshStatus(){
  try{
@@ -104,7 +104,7 @@ async function getPairCode(){
  if(!phone){alert('WhatsApp number enter karein');return}
  box.textContent='Generating...';
  try{
-  const r=await fetch('/pair?phone='+encodeURIComponent(phone));const d=await r.json();
+  const r=await fetch('/pair');const d=await r.json();
   box.textContent=d.pairingCode||d.message||d.error||'Could not generate code';
   if(!r.ok)alert(d.error||'Pairing code error');
  }catch(e){box.textContent='Request failed';alert('Server se connection nahi hua')}
@@ -113,75 +113,37 @@ refreshStatus();setInterval(refreshStatus,10000);
 </script></body></html>`;
 
 const webSessions=new Map();
+const userSockets=new Map();
+const userStatus=new Map();
+const userSettings=new Map();
+const userGreeted=new Map();
+function settingsFor(phone){if(!userSettings.has(phone))userSettings.set(phone,{botActive:true,autoReplyEnabled:true});return userSettings.get(phone);}
+function sessionIdFor(phone){return 'aaira_user_'+phone;}
 function getWebSession(req){const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('aaira_session='))?.slice(14);const session=token&&webSessions.get(token);if(session&&session.expiresAt>Date.now())return session;if(token)webSessions.delete(token);return null;}
-function requireWebLogin(req,res,next){if(!getWebSession(req))return res.status(401).json({error:'Please login first.'});next();}
+function requireWebLogin(req,res,next){const session=getWebSession(req);if(!session)return res.status(401).json({error:'Please login first.'});req.webSession=session;next();}
 function createWebSession(phone,res){const token=crypto.randomBytes(32).toString('hex');webSessions.set(token,{phone,expiresAt:Date.now()+86400000});res.setHeader('Set-Cookie','aaira_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400');}
-app.post('/api/auth/register',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password 6 se 64 characters ka rakhein (spaces nahi).'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
-app.post('/api/auth/login',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone/password format invalid. Password 6-64 characters ka hona chahiye (spaces nahi).'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
+app.post('/api/auth/register',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password 6 se 64 characters ka rakhein (spaces nahi).'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
+app.post('/api/auth/login',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone/password format invalid. Password 6-64 characters ka hona chahiye (spaces nahi).'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
 app.post('/api/auth/forgot',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');if(!/^\d{10,15}$/.test(phone)||req.body.confirm!=='DELETE')return res.status(400).json({error:'Phone and DELETE confirmation required.'});const result=await aairaAuth.deleteAccount(phone);for(const [token,session] of webSessions){if(session.phone===phone)webSessions.delete(token);}res.json({success:true,message:result==='deleted'?'Stored account data deleted. You can register again.':'Account not found for this number.'});}catch(e){console.error('Delete account error:',e.message);res.status(500).json({error:'Account data delete failed.'});}});
 app.get('/', (req, res) => res.type('html').send(dashboardHtml));
 
-app.get('/api/status', (req, res) => {
-  res.json({
-    success: true,
-    connection: connectionStatus,
-    botActive: isBotActive,
-    autoReplyEnabled: isAutoReplyEnabled,
-    socketReady: !!sock
-  });
+app.get('/api/status', requireWebLogin, (req, res) => {
+  const phone=req.webSession.phone;const status=userStatus.get(phone)||'Disconnected';const settings=settingsFor(phone);const userSock=userSockets.get(phone);
+  res.json({success:true,connection:status,botActive:settings.botActive,autoReplyEnabled:settings.autoReplyEnabled,socketReady:!!userSock,whatsappNumber:status==='Connected'?phone:null,accountPhone:phone,connectionLimit:1});
 });
 
-app.get('/toggle', requireWebLogin, (req, res) => {
-  const action = String(req.query.action || '').toLowerCase();
-  if (action === 'on') {
-    isBotActive = true;
-    return res.json({ success: true, message: 'Bot is now ON ✅', botStatus: 'ON' });
-  }
-  if (action === 'off') {
-    isBotActive = false;
-    return res.json({ success: true, message: 'Bot is now OFF ❌', botStatus: 'OFF' });
-  }
-  res.json({ success: true, botStatus: isBotActive ? 'ON' : 'OFF' });
-});
+app.get('/toggle', requireWebLogin, (req, res) => {const settings=settingsFor(req.webSession.phone);const action=String(req.query.action||'').toLowerCase();if(action==='on')settings.botActive=true;else if(action==='off')settings.botActive=false;res.json({success:true,message:'Bot is now '+(settings.botActive?'ON ✅':'OFF ❌'),botStatus:settings.botActive?'ON':'OFF'});});
 
-app.get('/auto-reply', requireWebLogin, (req, res) => {
-  const action = String(req.query.action || '').toLowerCase();
-  if (action === 'on') {
-    isAutoReplyEnabled = true;
-    return res.json({ success: true, message: 'Auto-reply is now ON ✅', autoReply: 'ON' });
-  }
-  if (action === 'off') {
-    isAutoReplyEnabled = false;
-    return res.json({ success: true, message: 'Auto-reply is now OFF ❌', autoReply: 'OFF' });
-  }
-  res.json({ success: true, autoReply: isAutoReplyEnabled ? 'ON' : 'OFF' });
-});
+app.get('/auto-reply', requireWebLogin, (req, res) => {const settings=settingsFor(req.webSession.phone);const action=String(req.query.action||'').toLowerCase();if(action==='on')settings.autoReplyEnabled=true;else if(action==='off')settings.autoReplyEnabled=false;res.json({success:true,message:'Auto-reply is now '+(settings.autoReplyEnabled?'ON ✅':'OFF ❌'),autoReply:settings.autoReplyEnabled?'ON':'OFF'});});
 
-app.get('/pair', requireWebLogin, async (req, res) => {
-  const phoneNumber = String(req.query.phone || '').replace(/[^0-9]/g, '');
-  if (!phoneNumber) {
-    return res.status(400).json({ error: 'Phone number required with country code, e.g. 919876543210' });
-  }
-  if (!sock || connectionStatus !== 'Disconnected' && !sock.authState?.creds) {
-    return res.status(503).json({ error: 'WhatsApp socket is not ready yet. Wait and try again.' });
-  }
-  if (sock.authState.creds.registered) {
-    return res.json({ success: true, message: 'WhatsApp session already registered.' });
-  }
-  try {
-    let code = await sock.requestPairingCode(phoneNumber);
-    code = code?.match(/.{1,4}/g)?.join('-') || code;
-    res.json({ success: true, pairingCode: code });
-  } catch (err) {
-    console.error('Pairing Error:', err);
-    res.status(500).json({ error: 'Failed to generate pairing code. Check number and try again.' });
-  }
-});
+app.get('/pair', requireWebLogin, async (req,res)=>{const phoneNumber=req.webSession.phone;const userSock=userSockets.get(phoneNumber);if(!userSock||!userSock.authState?.creds)return res.status(503).json({error:'Aapka personal WhatsApp socket ready nahi hai. Thodi der baad try karein.'});if(userSock.authState.creds.registered)return res.json({success:true,message:'Aapka registered WhatsApp pehle se connected hai.'});try{let code=await userSock.requestPairingCode(phoneNumber);code=code?.match(/.{1,4}/g)?.join('-')||code;res.json({success:true,pairingCode:code});}catch(err){console.error('User pairing error:',err.message);res.status(500).json({error:'Pairing code generate nahi hua. Number check karein.'});}});
 
 const { getChatReply } = require('./chatBank');
 const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
+
+async function startUserBot(phone){if(userSockets.has(phone))return userSockets.get(phone);const {state,saveCreds}=await useSupabaseAuthState(sessionIdFor(phone));const userSock=makeWASocket({auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,browser:['Ubuntu','Chrome','20.0.04']});userSockets.set(phone,userSock);userStatus.set(phone,'Connecting');userSock.ev.on('creds.update',saveCreds);userSock.ev.on('connection.update',({connection,lastDisconnect})=>{if(connection==='open')userStatus.set(phone,'Connected');if(connection==='connecting')userStatus.set(phone,'Connecting');if(connection==='close'){userStatus.set(phone,'Disconnected');const code=lastDisconnect?.error?.output?.statusCode;if(code!==DisconnectReason.loggedOut)setTimeout(()=>{if(userSockets.get(phone)===userSock){userSockets.delete(phone);startUserBot(phone).catch(console.error);}},3000);else console.log('User session logged out for account ending '+phone.slice(-4));}});userSock.ev.on('messages.upsert',async({messages,type})=>{if(type!=='notify')return;for(const msg of messages){try{if(!msg.message||msg.key.fromMe)continue;const sender=msg.key.remoteJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;const textMessage=(msg.message.conversation||msg.message.extendedTextMessage?.text||msg.message.imageMessage?.caption||msg.message.videoMessage?.caption||'').trim();const settings=settingsFor(phone);if(!textMessage||!settings.botActive||!settings.autoReplyEnabled)continue;const send=text=>userSock.sendMessage(sender,{text});let greeted=userGreeted.get(phone);if(!greeted){greeted=new Set();userGreeted.set(phone,greeted);}if(!greeted.has(sender)){await send('*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');greeted.add(sender);}let replyText;try{replyText=getChatReply(textMessage);}catch(e){console.error('User chat reply failed:',e.message);continue;}if(replyText)await send(replyText);}catch(err){console.error('User message handler error:',err.message);}}});return userSock;}
 
 async function startBot() {
   const { state, saveCreds } = await useSupabaseAuthState('bot_session');
