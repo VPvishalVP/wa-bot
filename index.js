@@ -63,7 +63,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
 <div class="row" style="margin-top:15px"><button onclick="toggleBot('on')">BOT ON</button><button onclick="toggleBot('off')">BOT OFF</button></div>
 <div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
-<button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
+
 </section>
 <section class="panel">
 <h2>💗 GREETING NAME CUSTOMIZATION</h2>
@@ -91,6 +91,7 @@ Welcome message — First message from each sender
 AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <p class="note">Dashboard theme: Gothic Dark • Black & White • Silver glow</p>
 </section>
+<section class="panel" style="text-align:center"><button onclick="refreshStatus()" style="width:100%;font-size:16px;padding:15px">↻ REFRESH DASHBOARD STATUS</button><p class="note">Button dabane par connection, Bot Status aur Auto Reply status update honge.</p></section>
 <footer>AAIRA • Gothic Dark Theme</footer>
 </div>
 <script>
@@ -143,7 +144,7 @@ async function toggleBot(action){const r=await fetch('/toggle?action='+action);c
 async function toggleAuto(action){const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus()}
 let liveSelectedJid=null;let livePollTimer=null;let liveSnapshot=[];function openLiveWhatsApp(){document.getElementById('liveLauncher').style.display='none';document.getElementById('livePanel').style.display='block';liveSelectedJid=null;liveSnapshot=[];document.getElementById('liveMessages').innerHTML='<div class="liveNote">Live messages load ho rahe hain…</div>';refreshLiveChats();if(livePollTimer)clearInterval(livePollTimer);livePollTimer=setInterval(refreshLiveChats,2000)}function backFromLive(){if(livePollTimer)clearInterval(livePollTimer);livePollTimer=null;liveSelectedJid=null;liveSnapshot=[];document.getElementById('livePanel').style.display='none';document.getElementById('liveLauncher').style.display='block';document.getElementById('liveChatList').innerHTML='<p class="liveNote">Incoming chats yahan dikhenge.</p>';document.getElementById('liveMessages').innerHTML='<div class="liveNote">Kisi chat ko select karein.</div>';document.getElementById('liveChatTitle').textContent='Chat select karein';document.getElementById('liveMessageInput').value=''}function escLive(v){return String(v||'').replace(/[&<>"\']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}async function refreshLiveChats(){try{const r=await fetch('/api/live-chats');if(!r.ok)return;const d=await r.json();liveSnapshot=d.chats||[];const list=document.getElementById('liveChatList');list.innerHTML=liveSnapshot.length?liveSnapshot.map(c=>'<button onclick="selectLiveChat(\''+escLive(c.jid)+'\')"><b>'+escLive(c.name)+'</b><div class="liveNote">'+escLive((c.messages||[]).slice(-1)[0]?.text||'')+'</div></button>').join(''):'<p class="liveNote">Abhi live incoming chat nahi aayi.</p>';if(liveSelectedJid){const c=liveSnapshot.find(x=>x.jid===liveSelectedJid);if(c)renderLiveMessages(c)}}catch(e){}}function selectLiveChat(jid){liveSelectedJid=jid;const c=liveSnapshot.find(x=>x.jid===jid);if(c)renderLiveMessages(c)}function renderLiveMessages(c){document.getElementById('liveChatTitle').textContent=c.name||c.jid;const box=document.getElementById('liveMessages');box.innerHTML=(c.messages||[]).map(m=>'<div class="liveMsg '+(m.fromMe?'mine':'')+'">'+escLive(m.text)+'</div>').join('');box.scrollTop=box.scrollHeight}async function sendLiveMessage(){const input=document.getElementById('liveMessageInput');const message=input.value.trim();if(!liveSelectedJid){alert('Pehle chat select karein.');return}if(!message)return;input.value='';try{const r=await fetch('/api/live-send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jid:liveSelectedJid,message})});const d=await r.json();if(!r.ok){alert(d.error||'Message send nahi hua');input.value=message;return}await refreshLiveChats()}catch(e){alert('Server connection nahi hua');input.value=message}}document.getElementById('liveMessageInput').addEventListener('keydown',e=>{if(e.key==='Enter')sendLiveMessage()});
 async function getPairCode(){const phone=document.getElementById('phone').value.replace(/\\D/g,'');const box=document.getElementById('pairCode');if(!phone){alert('WhatsApp number enter karein');return}box.textContent='Generating...';try{const r=await fetch('/pair?phone='+encodeURIComponent(phone));const d=await r.json();box.textContent=d.pairingCode||d.message||d.error||'Could not generate code';if(!r.ok)alert(d.error||'Pairing code error')}catch(e){box.textContent='Request failed';alert('Server se connection nahi hua')}}
-refreshStatus();setInterval(refreshStatus,10000);
+refreshStatus();
 </script></body></html>`;
 
 const webSessions=new Map();
