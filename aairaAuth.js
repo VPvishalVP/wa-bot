@@ -30,7 +30,7 @@ async function deleteAccount(phone) {
   return callAuthRpc('aaira_delete_account', { p_phone: phone });
 }
 
-async function getDisplayName(phone) {
+async function deleteWhatsAppSession(phone) {\n  const { error } = await supabase.from('sessions').delete().eq('session_id', 'account_' + phone);\n  if (error) throw error;\n}\n\nasync function getDisplayName(phone) {
   const { data, error } = await supabase
     .from('aaira_account_settings')
     .select('display_name')
@@ -101,4 +101,4 @@ async function releaseWhatsAppSessionLock(phone, ownerToken) {
   return callAuthRpc('release_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken });
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones };
+module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones, deleteWhatsAppSession };
