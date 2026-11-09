@@ -125,7 +125,8 @@ function getAccountBot(req) {
   return accountBots.get(session.phone) || null;
 }
 
-async function startAccountBot(accountPhone) {
+  const bot = {
+    sock: null,
   if (accountBots.has(accountPhone)) return accountBots.get(accountPhone);
   const bot = {
     sock: null,
@@ -138,6 +139,22 @@ async function startAccountBot(accountPhone) {
   accountBots.set(accountPhone, bot);
 
   try {
+    const lockClaimed = await aairaAuth.claimWhatsAppSessionLock(accountPhone, bot.ownerToken, 120);
+    if (!lockClaimed) {
+      bot.connectionStatus = 'Session active elsewhere';
+      console.warn('WhatsApp session lock held by another instance for account:', accountPhone);
+      const retryTimer = setTimeout(() => {
+        if (accountBots.get(accountPhone) === bot) accountBots.delete(accountPhone);
+        startAccountBot(accountPhone, bot.ownerToken).catch(err => console.error('Session lock retry failed:', err.message));
+      }, 30000);
+      reconnectTimers.set(accountPhone, retryTimer);
+      return bot;
+    }
+    bot.leaseTimer = setInterval(() => {
+      aairaAuth.claimWhatsAppSessionLock(accountPhone, bot.ownerToken, 120)
+        .then(ok => { if (!ok) console.error('WhatsApp session lease renewal rejected for account:', accountPhone); })
+        .catch(err => console.error('WhatsApp session lease renewal failed:', err.message));
+    }, 30000);
     const savedSettings = await aairaAuth.getBotSettings(accountPhone);
     bot.botActive = savedSettings.botActive;
     bot.autoReplyEnabled = savedSettings.autoReplyEnabled;
@@ -162,6 +179,10 @@ async function startAccountBot(accountPhone) {
         bot.connectionStatus = 'Connecting';
       } else if (connection === 'close') {
         bot.connectionStatus = 'Disconnected';
+        if (bot.leaseTimer) { clearInterval(bot.leaseTimer); bot.leaseTimer = null; }
+        if (statusCode === DisconnectReason.loggedOut) {
+          aairaAuth.releaseWhatsAppSessionLock(accountPhone, bot.ownerToken).catch(err => console.error('Session lock release failed:', err.message));
+        }
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log('WhatsApp closed for account:', accountPhone, statusCode);
 
@@ -182,7 +203,7 @@ async function startAccountBot(accountPhone) {
           const timer = setTimeout(() => {
             reconnectTimers.delete(accountPhone);
             if (accountBots.get(accountPhone) === bot) accountBots.delete(accountPhone);
-            startAccountBot(accountPhone).catch((err) => {
+            startAccountBot(accountPhone, bot.ownerToken).catch((err) => {
               console.error('WhatsApp reconnect failed for account:', accountPhone, err);
             });
           }, delayMs);
