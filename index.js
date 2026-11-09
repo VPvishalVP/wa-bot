@@ -169,88 +169,8 @@ app.get('/pair', async (req, res) => {
   }
 });
 
-// Gemini-only conversational replies. No fixed reply bank or template fallback.
-async function createAssistantReply(userMessage) {
-  const message = String(userMessage || '').trim();
-  if (!message) return null;
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
-
-  const prompt = [
-    'You are AAIRA, a warm, natural WhatsApp assistant.',
-    'Reply to the user message with an accurate, meaningful and context-aware answer.',
-    'Match the user language: natural Hindi, Hinglish, or English.',
-    'Be concise for casual chat; give helpful detail for real questions.',
-    'Do not claim to be human. Do not invent facts. If uncertain, say so clearly.',
-    'Avoid canned fallback phrases; answer the actual message.',
-    '',
-    'User message:',
-    message
-  ].join('\\n');
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
-  try {
-    const response = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(apiKey),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
-        }),
-        signal: controller.signal
-      }
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      const detail = data?.error?.message || ('HTTP ' + response.status);
-      throw new Error('Gemini API error: ' + detail);
-    }
-    const answer = data?.candidates?.[0]?.content?.parts
-      ?.map(part => part.text || '')
-      .join('')
-      .trim();
-    if (!answer) throw new Error('Gemini returned an empty response');
-    return answer;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
+const { getChatReply } = require('./chatBank');
 const greetedSenders = new Set();
-
-function createAssistantReply(userMessage) {
-  const message = String(userMessage || '').trim();
-  const lower = message.toLowerCase();
-  const isHindi = /[\u0900-\u097F]/.test(message) ||
-    /\b(kaise|kaisa|kaisi|kya|kyu|kyun|hai|hain|ho|hoga|hogi|batao|bataiye|madad|namaste|shukriya|dhanyawad|mera|meri|aap|tum|nahi|haan|han|theek|karna|karo|chahiye|padhai|khana|samjhao)\b/i.test(lower);
-
-  // Handle elementary arithmetic without eval or executing user-provided code.
-  const mathMatch = lower.match(/(?:what is|calculate|solve|kitna|=?\s*)?(-?\d+(?:\.\d+)?)\s*([+\-*\/])\s*(-?\d+(?:\.\d+)?)(?:\s*=?\s*\??)?$/);
-  if (mathMatch) {
-    const a = Number(mathMatch[1]), b = Number(mathMatch[3]), op = mathMatch[2];
-    let result;
-    if (op === '+') result = a + b;
-    else if (op === '-') result = a - b;
-    else if (op === '*') result = a * b;
-    else if (op === '/') result = b === 0 ? null : a / b;
-    if (result !== undefined) return result === null ? "Zero se divide nahi kar sakte. / Division by zero is undefined." : String(result);
-  }
-
-  const commonReply = getCommonChatReply(message, isHindi);
-  if (commonReply) return commonReply;
-
-  for (const rule of assistantReplyRules) {
-    if (rule.keys.test(message)) return isHindi ? rule.hi : rule.en;
-  }
-
-  return isHindi
-    ? "Haan ji 😊 AAIRA yahin hai. Boliye, kya baat hai?"
-    : "Hi 😊 AAIRA is here. What’s up?";
-}
 
 async function startBot() {
   const { state, saveCreds } = await useSupabaseAuthState('bot_session');
@@ -313,10 +233,10 @@ async function startBot() {
 
         let replyText;
         try {
-          replyText = await createAssistantReply(textMessage);
+          replyText = getChatReply(textMessage);
         } catch (aiErr) {
-          console.error('Gemini reply failed:', aiErr.message);
-          continue; // No canned/template fallback: retry when service is available.
+          console.error('Chat bank reply failed:', aiErr.message);
+          continue; // Skip sending if the local chat handler errors.
         }
 
         if (!replyText) continue;
