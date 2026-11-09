@@ -52,7 +52,7 @@ pre{white-space:pre-wrap;color:#ddd;font-size:13px}
 footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </style>
 </head>
-<body><div class="wrap">
+<body><section id="authGate" style="position:fixed;inset:0;z-index:99;background:#050505;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur 8-digit password se login karein ya account banayein.</p><label>Mobile number (country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="919876543210"><label>8-digit password</label><input id="authPassword" type="password" inputmode="numeric" maxlength="8" placeholder="••••••••"><div class="row"><button onclick="authAction('login')">LOGIN</button><button onclick="authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section><div class="wrap">
 <header><div class="logo">AAIRA ✦</div><div class="subtitle">VIHUHUHU KA OFFLINE ASSISTANT</div></header>
 <section class="panel">
 <div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected</span></div>
@@ -81,6 +81,8 @@ AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <footer>AAIRA • Gothic Dark Theme</footer>
 </div>
 <script>
+async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\d{8}$/.test(password)){msg.textContent='Password exactly 8 digits ka hona chahiye.';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok)document.getElementById('authGate').style.display='none';}catch(e){msg.textContent='Server connection failed.'}}
+async function forgotAccount(){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)){alert('Phone number country code ke saath enter karein.');return}if(prompt('Account data permanently delete karne ke liye DELETE type karein:')!=='DELETE')return;try{const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,confirm:'DELETE'})});const d=await r.json();document.getElementById('authMessage').textContent=d.message||d.error||'Done';}catch(e){document.getElementById('authMessage').textContent='Server connection failed.'}}
 async function refreshStatus(){
  try{
   const r=await fetch('/api/status');const d=await r.json();
@@ -110,6 +112,13 @@ async function getPairCode(){
 refreshStatus();setInterval(refreshStatus,10000);
 </script></body></html>`;
 
+const webSessions=new Map();
+function getWebSession(req){const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('aaira_session='))?.slice(14);const session=token&&webSessions.get(token);if(session&&session.expiresAt>Date.now())return session;if(token)webSessions.delete(token);return null;}
+function requireWebLogin(req,res,next){if(!getWebSession(req))return res.status(401).json({error:'Please login first.'});next();}
+function createWebSession(phone,res){const token=crypto.randomBytes(32).toString('hex');webSessions.set(token,{phone,expiresAt:Date.now()+86400000});res.setHeader('Set-Cookie','aaira_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400');}
+app.post('/api/auth/register',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\\D/g,'');const password=String(req.body.password||'');if(!/^\\d{10,15}$/.test(phone)||!/^\\d{8}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password exactly 8 digits rakhein.'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
+app.post('/api/auth/login',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\\D/g,'');const password=String(req.body.password||'');if(!/^\\d{10,15}$/.test(phone)||!/^\\d{8}$/.test(password))return res.status(400).json({error:'Phone/password format invalid.'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
+app.post('/api/auth/forgot',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)||req.body.confirm!=='DELETE')return res.status(400).json({error:'Phone and DELETE confirmation required.'});const result=await aairaAuth.deleteAccount(phone);for(const [token,session] of webSessions){if(session.phone===phone)webSessions.delete(token);}res.json({success:true,message:result==='deleted'?'Stored account data deleted. You can register again.':'Account not found for this number.'});}catch(e){console.error('Delete account error:',e.message);res.status(500).json({error:'Account data delete failed.'});}});
 app.get('/', (req, res) => res.type('html').send(dashboardHtml));
 
 app.get('/api/status', (req, res) => {
@@ -122,7 +131,7 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-app.get('/toggle', (req, res) => {
+app.get('/toggle', requireWebLogin, (req, res) => {
   const action = String(req.query.action || '').toLowerCase();
   if (action === 'on') {
     isBotActive = true;
@@ -135,7 +144,7 @@ app.get('/toggle', (req, res) => {
   res.json({ success: true, botStatus: isBotActive ? 'ON' : 'OFF' });
 });
 
-app.get('/auto-reply', (req, res) => {
+app.get('/auto-reply', requireWebLogin, (req, res) => {
   const action = String(req.query.action || '').toLowerCase();
   if (action === 'on') {
     isAutoReplyEnabled = true;
@@ -148,7 +157,7 @@ app.get('/auto-reply', (req, res) => {
   res.json({ success: true, autoReply: isAutoReplyEnabled ? 'ON' : 'OFF' });
 });
 
-app.get('/pair', async (req, res) => {
+app.get('/pair', requireWebLogin, async (req, res) => {
   const phoneNumber = String(req.query.phone || '').replace(/[^0-9]/g, '');
   if (!phoneNumber) {
     return res.status(400).json({ error: 'Phone number required with country code, e.g. 919876543210' });
@@ -173,10 +182,6 @@ const { getChatReply } = require('./chatBank');
 const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
-// Authentication stages and reset OTPs are transient server memory; OTPs expire after 5 minutes.
-const authStages = new Map();
-const resetCodes = new Map();
-const authenticatedSenders = new Set();
 
 async function startBot() {
   const { state, saveCreds } = await useSupabaseAuthState('bot_session');
@@ -226,111 +231,7 @@ async function startBot() {
         if (!textMessage || !isBotActive || !isAutoReplyEnabled) continue;
 
         const send = (text) => sock.sendMessage(sender, { text });
-        const stage = authStages.get(sender);
 
-        if (textMessage.toLowerCase() === '!reset' || textMessage.toLowerCase() === 'forgot password') {
-          const code = String(crypto.randomInt(100000, 1000000));
-          resetCodes.set(sender, { code, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
-          authStages.set(sender, 'reset_otp');
-          await send('🔐 Password reset code: *' + code + '*\nYe code 5 minute valid hai. Isi WhatsApp chat mein code enter karein.');
-          continue;
-        }
-
-        if (stage === 'register_password') {
-          if (!/^[0-9]{8}$/.test(textMessage)) {
-            await send('❌ Password exactly 8 digits ka numeric hona chahiye. Naya password enter karein.');
-            continue;
-          }
-          const result = await aairaAuth.register(phone, textMessage);
-          if (result === 'created') {
-            authenticatedSenders.add(sender);
-            authStages.delete(sender);
-            await send('✅ Account create aur verify ho gaya! AAIRA bot ab use kar sakte hain.');
-          } else {
-            authStages.set(sender, 'login_password');
-            await send('Account pehle se hai. 🔑 Apna 8-digit password enter karein.');
-          }
-          continue;
-        }
-
-        if (stage === 'login_password') {
-          if (!/^[0-9]{8}$/.test(textMessage)) {
-            await send('🔑 Password exactly 8 digits ka hona chahiye. Dobara enter karein.');
-            continue;
-          }
-          const result = await aairaAuth.verify(phone, textMessage);
-          if (result === 'ok') {
-            authenticatedSenders.add(sender);
-            authStages.delete(sender);
-            await send('✅ Number aur password verify ho gaye! Welcome to AAIRA.');
-          } else if (result === 'locked') {
-            await send('⏳ 5 wrong attempts ho gaye. Account 15 minutes ke liye locked hai.');
-          } else if (result === 'not_found') {
-            authStages.set(sender, 'register_password');
-            await send('🆕 Account nahi mila. Apna naya *8-digit numeric password* banayein aur bhejein.');
-          } else {
-            await send('❌ Password galat hai. Dobara enter karein, ya password reset ke liye !reset bhejein.');
-          }
-          continue;
-        }
-
-        if (stage === 'reset_otp') {
-          const record = resetCodes.get(sender);
-          if (!record || Date.now() > record.expiresAt) {
-            resetCodes.delete(sender); authStages.delete(sender);
-            await send('⌛ Reset code expire ho gaya. !reset bhej kar naya code lein.');
-            continue;
-          }
-          record.attempts++;
-          if (record.attempts > 5) {
-            resetCodes.delete(sender); authStages.delete(sender);
-            await send('🚫 Too many attempts. !reset bhej kar naya code request karein.');
-            continue;
-          }
-          if (textMessage !== record.code) {
-            await send('❌ Code galat hai. Sahi reset code enter karein.');
-            continue;
-          }
-          resetCodes.delete(sender);
-          authStages.set(sender, 'reset_password');
-          await send('✅ Code verify ho gaya. Ab naya exactly 8-digit password enter karein.');
-          continue;
-        }
-
-        if (stage === 'reset_password') {
-          if (!/^[0-9]{8}$/.test(textMessage)) {
-            await send('❌ Naya password exactly 8 digits ka hona chahiye.');
-            continue;
-          }
-          const result = await aairaAuth.resetPassword(phone, textMessage);
-          authStages.delete(sender);
-          if (result === 'reset') {
-            authenticatedSenders.add(sender);
-            await send('🔐 Password reset successful! AAIRA access restored.');
-          } else {
-            await send('Account nahi mila. Pehle account register karein.');
-          }
-          continue;
-        }
-
-        if (!authenticatedSenders.has(sender)) {
-          const result = await aairaAuth.verify(phone, textMessage);
-          if (result === 'ok') {
-            authenticatedSenders.add(sender);
-            await send('✅ Password verify ho gaya! AAIRA ready hai.');
-            continue;
-          }
-          if (result === 'not_found') {
-            authStages.set(sender, 'register_password');
-            await send('🔐 AAIRA account verification\nAapka WhatsApp number automatically detect hua. Apna naya *8-digit numeric password* enter karein.');
-          } else if (result === 'locked') {
-            await send('⏳ Account 15 minutes ke liye locked hai. Baad mein try karein.');
-          } else {
-            authStages.set(sender, 'login_password');
-            await send('🔑 AAIRA account protected hai. Apna *8-digit password* enter karein. Password bhool gaye? !reset bhejein.');
-          }
-          continue;
-        }
 
         if (!greetedSenders.has(sender)) {
           await send('*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
