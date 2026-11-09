@@ -26,5 +26,8 @@ async function verify(phone, password) {
 async function resetPassword(phone, password) {
   return callAuthRpc('aaira_reset_password', { p_phone: phone, p_password: password });
 }
+async function deleteAccount(phone) {
+  return callAuthRpc('aaira_delete_account', { p_phone: phone });
+}
 
-module.exports = { register, verify, resetPassword };
+module.exports = { register, verify, resetPassword, deleteAccount };
