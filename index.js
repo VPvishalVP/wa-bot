@@ -1,5 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, DisconnectReason, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
 const http = require('http');
 
@@ -211,7 +211,19 @@ async function startAccountBot(accountPhone, ownerToken = crypto.randomUUID()) {
     bot.autoReplyEnabled = savedSettings.autoReplyEnabled;
     bot.displayName = await aairaAuth.getDisplayName(accountPhone);
     const { state, saveCreds } = await useSupabaseAuthState('account_' + accountPhone);
+    // Use WhatsApp Web's live protocol version; the Baileys bundled default may be stale and cause 408 pairing failures.
+    let waVersion;
+    try {
+      const liveVersion = await fetchLatestWaWebVersion();
+      if (Array.isArray(liveVersion?.version) && liveVersion.version.length === 3) {
+        waVersion = liveVersion.version;
+        console.info('[WA] Live WhatsApp Web version selected:', waVersion.join('.'));
+      }
+    } catch (versionError) {
+      console.warn('[WA] Live version lookup failed; falling back to Baileys default:', versionError?.message || versionError);
+    }
     const socket = makeWASocket({
+      ...(waVersion ? { version: waVersion } : {}),
       auth: state,
       printQRInTerminal: false,
       connectTimeoutMs: 60000,
