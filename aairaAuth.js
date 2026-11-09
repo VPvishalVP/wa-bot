@@ -39,6 +39,27 @@ async function getDisplayName(phone) {
   if (error) throw error;
   return data?.display_name || 'VIHUHUHU';
 }
+async function getBotSettings(phone) {
+  const { data, error } = await supabase
+    .from('aaira_account_settings')
+    .select('bot_active, auto_reply_enabled')
+    .eq('phone', phone)
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    botActive: data?.bot_active ?? true,
+    autoReplyEnabled: data?.auto_reply_enabled ?? true
+  };
+}
+async function setBotSetting(phone, setting, value) {
+  const column = setting === 'botActive' ? 'bot_active' : 'auto_reply_enabled';
+  const { error } = await supabase
+    .from('aaira_account_settings')
+    .upsert({ phone, [column]: !!value, updated_at: new Date().toISOString() }, { onConflict: 'phone' });
+  if (error) throw error;
+  return !!value;
+}
+
 async function setDisplayName(phone, displayName) {
   const { error } = await supabase
     .from('aaira_account_settings')
@@ -47,4 +68,4 @@ async function setDisplayName(phone, displayName) {
   return displayName;
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName };
+module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting };
