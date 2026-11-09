@@ -52,6 +52,7 @@ border:1px dashed #aaa;border-radius:12px;margin-top:12px;min-height:60px}
 .note{font-size:12px;color:#aaa;line-height:1.6}
 pre{white-space:pre-wrap;color:#ddd;font-size:13px}
 footer{text-align:center;color:#777;padding:20px;font-size:12px}
+.liveBtn{width:100%;font-size:16px;padding:15px;background:#10251d;border-color:#36a879}.liveWrap{height:min(70vh,620px);min-height:400px;display:flex;border:1px solid #555;border-radius:12px;overflow:hidden;background:#101817}.liveSidebar{width:34%;min-width:110px;border-right:1px solid #444;overflow:auto}.liveMain{flex:1;display:flex;flex-direction:column;min-width:0}.liveTop{padding:10px;background:#18231f;border-bottom:1px solid #444}.liveList button{width:100%;margin:0;border:0;border-bottom:1px solid #333;border-radius:0;text-align:left;padding:12px 8px;overflow-wrap:anywhere}.liveMsgs{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#0b1512}.liveMsg{max-width:90%;padding:9px 12px;border-radius:10px;background:#26332d;white-space:pre-wrap;overflow-wrap:anywhere}.liveMsg.mine{align-self:flex-end;background:#164d3a}.liveComposer{display:flex;gap:5px;padding:8px;background:#17221d}.liveComposer input{margin:0;min-width:0}.liveComposer button{margin:0}.liveNote{font-size:11px;color:#aaa;padding:7px}
 </style>
 </head>
 <body><section id="authGate" style="position:fixed;inset:0;z-index:99;background:#050505;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur 6-64 characters password se login karein ya account banayein.</p><label>Mobile number (country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="919876543210"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button onclick="authAction('login')">LOGIN</button><button onclick="authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section><div class="wrap">
@@ -80,6 +81,8 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <div id="pairCode" class="code">----</div>
 <p class="note">Code milne par WhatsApp mein Linked Devices → Link a device → Link with phone number se enter karein. Number digits only, country code ke saath.</p>
 </section>
+<section class="panel" id="liveLauncher"><button class="liveBtn" onclick="openLiveWhatsApp()">💬 LIVE WHATSAPP</button><p class="note">Live chat view • Dashboard par history database mein save nahi hoti.</p></section>
+<section class="panel" id="livePanel" style="display:none"><div class="status"><h2>💬 LIVE WHATSAPP</h2><button onclick="backFromLive()">← BACK</button></div><div class="liveWrap"><aside class="liveSidebar"><div class="liveTop">Chats (live)</div><div id="liveChatList" class="liveList"><p class="liveNote">Incoming chats yahan dikhenge.</p></div></aside><div class="liveMain"><div class="liveTop" id="liveChatTitle">Chat select karein</div><div class="liveMsgs" id="liveMessages"><div class="liveNote">Kisi chat ko select karein.</div></div><div class="liveComposer"><input id="liveMessageInput" placeholder="Message type karein..." autocomplete="off"><button onclick="sendLiveMessage()">SEND</button></div></div></div><p class="liveNote">⚠️ Ye screen live-only hai. Refresh/back karne par visible transcript clear; Supabase message-history table mein kuch save nahi hota. WhatsApp ke apne storage par messages rehte hain.</p></section>
 <section class="panel">
 <h2>📋 AAIRA MENU / STATUS</h2>
 <pre>!ping  — Check bot reply
@@ -98,6 +101,7 @@ async function saveAssistantName(){const displayName=document.getElementById('as
 async function refreshStatus(){try{const r=await fetch('/api/status');const d=await r.json();const c=document.getElementById('connection');c.textContent=d.connection;c.className='pill '+(d.connection==='Connected'?'green':'red');document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';}catch(e){document.getElementById('connection').textContent='Status unavailable'}}
 async function toggleBot(action){const r=await fetch('/toggle?action='+action);const d=await r.json();alert(d.message||d.botStatus);refreshStatus()}
 async function toggleAuto(action){const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus()}
+let liveSelectedJid=null;let livePollTimer=null;let liveSnapshot=[];function openLiveWhatsApp(){document.getElementById('liveLauncher').style.display='none';document.getElementById('livePanel').style.display='block';liveSelectedJid=null;liveSnapshot=[];document.getElementById('liveMessages').innerHTML='<div class="liveNote">Live messages load ho rahe hain…</div>';refreshLiveChats();if(livePollTimer)clearInterval(livePollTimer);livePollTimer=setInterval(refreshLiveChats,2000)}function backFromLive(){if(livePollTimer)clearInterval(livePollTimer);livePollTimer=null;liveSelectedJid=null;liveSnapshot=[];document.getElementById('livePanel').style.display='none';document.getElementById('liveLauncher').style.display='block';document.getElementById('liveChatList').innerHTML='<p class="liveNote">Incoming chats yahan dikhenge.</p>';document.getElementById('liveMessages').innerHTML='<div class="liveNote">Kisi chat ko select karein.</div>';document.getElementById('liveChatTitle').textContent='Chat select karein';document.getElementById('liveMessageInput').value=''}function escLive(v){return String(v||'').replace(/[&<>"\']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}async function refreshLiveChats(){try{const r=await fetch('/api/live-chats');if(!r.ok)return;const d=await r.json();liveSnapshot=d.chats||[];const list=document.getElementById('liveChatList');list.innerHTML=liveSnapshot.length?liveSnapshot.map(c=>'<button onclick="selectLiveChat(\''+escLive(c.jid)+'\')"><b>'+escLive(c.name)+'</b><div class="liveNote">'+escLive((c.messages||[]).slice(-1)[0]?.text||'')+'</div></button>').join(''):'<p class="liveNote">Abhi live incoming chat nahi aayi.</p>';if(liveSelectedJid){const c=liveSnapshot.find(x=>x.jid===liveSelectedJid);if(c)renderLiveMessages(c)}}catch(e){}}function selectLiveChat(jid){liveSelectedJid=jid;const c=liveSnapshot.find(x=>x.jid===jid);if(c)renderLiveMessages(c)}function renderLiveMessages(c){document.getElementById('liveChatTitle').textContent=c.name||c.jid;const box=document.getElementById('liveMessages');box.innerHTML=(c.messages||[]).map(m=>'<div class="liveMsg '+(m.fromMe?'mine':'')+'">'+escLive(m.text)+'</div>').join('');box.scrollTop=box.scrollHeight}async function sendLiveMessage(){const input=document.getElementById('liveMessageInput');const message=input.value.trim();if(!liveSelectedJid){alert('Pehle chat select karein.');return}if(!message)return;input.value='';try{const r=await fetch('/api/live-send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jid:liveSelectedJid,message})});const d=await r.json();if(!r.ok){alert(d.error||'Message send nahi hua');input.value=message;return}await refreshLiveChats()}catch(e){alert('Server connection nahi hua');input.value=message}}document.getElementById('liveMessageInput').addEventListener('keydown',e=>{if(e.key==='Enter')sendLiveMessage()});
 async function getPairCode(){const phone=document.getElementById('phone').value.replace(/\\D/g,'');const box=document.getElementById('pairCode');if(!phone){alert('WhatsApp number enter karein');return}box.textContent='Generating...';try{const r=await fetch('/pair?phone='+encodeURIComponent(phone));const d=await r.json();box.textContent=d.pairingCode||d.message||d.error||'Could not generate code';if(!r.ok)alert(d.error||'Pairing code error')}catch(e){box.textContent='Request failed';alert('Server se connection nahi hua')}}
 refreshStatus();setInterval(refreshStatus,10000);
 </script></body></html>`;
@@ -135,6 +139,7 @@ async function startAccountBot(accountPhone, ownerToken = crypto.randomUUID()) {
     botActive: true,
     autoReplyEnabled: true,
     greetedSenders: new Set(),
+    liveChats: new Map(),
     displayName: 'VIHUHUHU'
   };
   accountBots.set(accountPhone, bot);
@@ -221,11 +226,12 @@ async function startAccountBot(accountPhone, ownerToken = crypto.randomUUID()) {
       if (type !== 'notify') return;
       for (const msg of messages) {
         try {
-          if (!msg.message || msg.key.fromMe) continue;
+          if (!msg.message) continue;
           const sender = msg.key.remoteJid;
           if (!sender || sender === 'status@broadcast' || sender.endsWith('@g.us')) continue;
           const textMessage = (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || '').trim();
-          if (!textMessage || !bot.botActive || !bot.autoReplyEnabled) continue;
+          if (textMessage) { let chat=bot.liveChats.get(sender); if(!chat){chat={jid:sender,name:msg.pushName||sender.split('@')[0],messages:[]};bot.liveChats.set(sender,chat)} if(msg.pushName)chat.name=msg.pushName; chat.messages.push({text:textMessage,fromMe:!!msg.key.fromMe,at:Date.now()}); if(chat.messages.length>100)chat.messages.splice(0,chat.messages.length-100); }
+          if (msg.key.fromMe || !textMessage || !bot.botActive || !bot.autoReplyEnabled) continue;
           const send = (text) => socket.sendMessage(sender, { text });
           if (!bot.greetedSenders.has(sender)) {
             await send('*Heyy! 💗 Mai ' + bot.displayName + ' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
@@ -246,6 +252,9 @@ async function startAccountBot(accountPhone, ownerToken = crypto.randomUUID()) {
     throw err;
   }
 }
+
+app.get('/api/live-chats', requireWebLogin, (req,res)=>{const bot=getAccountBot(req);if(!bot||!bot.sock||bot.connectionStatus!=='Connected')return res.status(503).json({error:'WhatsApp connected nahi hai.'});res.setHeader('Cache-Control','no-store');res.json({success:true,chats:Array.from(bot.liveChats.values()).map(c=>({jid:c.jid,name:c.name,messages:c.messages}))});});
+app.post('/api/live-send', requireWebLogin, async (req,res)=>{const bot=getAccountBot(req);const jid=String(req.body.jid||'');const message=String(req.body.message||'').trim();if(!bot||!bot.sock||bot.connectionStatus!=='Connected')return res.status(503).json({error:'WhatsApp connected nahi hai.'});if(!/^\d{8,20}@s\.whatsapp\.net$/.test(jid))return res.status(400).json({error:'Valid personal chat select karein.'});if(!message||message.length>4000)return res.status(400).json({error:'Message 1-4000 characters ka rakhein.'});try{await bot.sock.sendMessage(jid,{text:message});let chat=bot.liveChats.get(jid);if(!chat){chat={jid,name:jid.split('@')[0],messages:[]};bot.liveChats.set(jid,chat)}chat.messages.push({text:message,fromMe:true,at:Date.now()});if(chat.messages.length>100)chat.messages.splice(0,chat.messages.length-100);res.json({success:true});}catch(e){console.error('Live dashboard send failed:',e.message);res.status(500).json({error:'Message send nahi hua.'});}});
 
 app.get('/api/assistant-name', requireWebLogin, async (req, res) => {
   try {
