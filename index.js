@@ -185,7 +185,7 @@ async function generateAIReply(sender, userMessage) {
   const knownFullForms = { mp: 'Madhya Pradesh', up: 'Uttar Pradesh', cid: 'Crime Investigation Department (CID)', usa: 'United States of America', uae: 'United Arab Emirates', rbi: 'Reserve Bank of India', cbi: 'Central Bureau of Investigation', isro: 'Indian Space Research Organisation', nasa: 'National Aeronautics and Space Administration', atm: 'Automated Teller Machine', pnr: 'Passenger Name Record', otp: 'One-Time Password', cpu: 'Central Processing Unit', html: 'HyperText Markup Language', www: 'World Wide Web', lpg: 'Liquefied Petroleum Gas', gst: 'Goods and Services Tax', upsc: 'Union Public Service Commission', ips: 'Indian Police Service', ias: 'Indian Administrative Service' };
   if (fullFormMatch) {
     const acronym = fullFormMatch[1].toLowerCase();
-    if (knownFullForms[acronym] && /full form|fullform|ka full|ki full|full form kya|full form of/i.test(userMessage)) return knownFullForms[acronym];
+    if (knownFullForms[acronym] && /full form|fullform|ka full|ki full|full pucha|full kya|full form kya|full form of/i.test(userMessage)) return knownFullForms[acronym];
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
