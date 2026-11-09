@@ -30,7 +30,12 @@ async function deleteAccount(phone) {
   return callAuthRpc('aaira_delete_account', { p_phone: phone });
 }
 
-async function deleteWhatsAppSession(phone) {\n  const { error } = await supabase.from('sessions').delete().eq('session_id', 'account_' + phone);\n  if (error) throw error;\n}\n\nasync function getDisplayName(phone) {
+async function deleteWhatsAppSession(phone) {
+  const { error } = await supabase.from('sessions').delete().eq('session_id', 'account_' + phone);
+  if (error) throw error;
+}
+
+async function getDisplayName(phone) {
   const { data, error } = await supabase
     .from('aaira_account_settings')
     .select('display_name')
