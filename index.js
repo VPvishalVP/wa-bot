@@ -16,7 +16,7 @@ let connectionStatus = 'Disconnected';
 const greetedUsers = new Set(); // RAM-only; resets after server restart
 
 const WELCOME_MESSAGE =
-  '*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨\\nAI HU MERA NAME AAIRA HAI*';
+  '*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*';
 
 const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
