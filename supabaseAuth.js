@@ -3,18 +3,22 @@ const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 
 // Supabase credentials
 const supabaseUrl = 'https://rthezmmpatudgjfahsrv.supabase.co';
-const supabaseKey = 'sb_publishable_dSjC-9dbKcEQYrqkAOcEUw_K9CSpiOt';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseKey) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY for private WhatsApp session storage.');
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+});
 
 const useSupabaseAuthState = async (sessionId) => {
     const writeData = async (data, key) => {
         const jsonString = JSON.stringify(data, BufferJSON.replacer);
-        await supabase.from('sessions').upsert({
+        const { error } = await supabase.from('sessions').upsert({
             session_id: sessionId,
             key: key,
             data: jsonString
         }, { onConflict: 'session_id,key' });
+        if (error) throw error;
     };
 
     const readData = async (key) => {
@@ -35,9 +39,10 @@ const useSupabaseAuthState = async (sessionId) => {
     };
 
     const removeData = async (key) => {
-        await supabase.from('sessions').delete()
+        const { error } = await supabase.from('sessions').delete()
             .eq('session_id', sessionId)
             .eq('key', key);
+        if (error) throw error;
     };
 
     const creds = (await readData('creds')) || initAuthCreds();
