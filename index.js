@@ -102,7 +102,9 @@ async function submit(action){
 if(busy)return;
 var phone=(document.getElementById('authPhone').value||'').replace(/\D/g,'');
 var password=document.getElementById('authPassword').value||'';
-if(!/^\d{10,15}$/.test(phone)){message('Phone number country code ke saath 10-15 digits ka enter karein.');return;}
+// India users may enter their local 10-digit mobile number; add country code 91 automatically.
+if(/^\d{10}$/.test(phone)){phone='91'+phone;document.getElementById('authPhone').value=phone;}
+if(!/^\d{10,15}$/.test(phone)){message('10 digit mobile number ya country code ke saath 10-15 digits enter karein.');return;}
 if(!/^\S{6,64}$/.test(password)){message('Password 6-64 characters ka hona chahiye (spaces nahi).');return;}
 busy=true;var l=document.getElementById('loginBtn'),rbtn=document.getElementById('registerBtn');l.disabled=true;rbtn.disabled=true;
 var prevL=l.textContent,prevR=rbtn.textContent;l.textContent='PLEASE WAIT…';rbtn.textContent='PLEASE WAIT…';
