@@ -281,11 +281,7 @@ async function startBot() {
 
         if (!isAutoReplyEnabled) continue;
 
-        const category = detectCategory(textMessage);
-        const randomReply = choose(replyGroups[category] || replyGroups.default);
-        const followups = ['Tum batao?', 'Aur sunao!', 'Phir kya hua?', 'Thoda aur batao.', 'Main sun raha hoon.'];
-        const endings = [' 😊', ' ❤️', ' 😄', ' ✨', ' 🤗', ' 🌸', ' 🥰'];
-        const replyText = `${randomReply} ${choose(followups)}${choose(endings)}`;
+        const replyText = generateReply(textMessage);
 
         await sock.sendMessage(sender, { text: replyText });
         console.log('[Reply Sent Successfully]');
