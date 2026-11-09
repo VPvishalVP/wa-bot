@@ -170,7 +170,13 @@ app.get('/pair', async (req, res) => {
 });
 
 const { getChatReply } = require('./chatBank');
+const crypto = require('crypto');
+const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
+// Authentication stages and reset OTPs are transient server memory; OTPs expire after 5 minutes.
+const authStages = new Map();
+const resetCodes = new Map();
+const authenticatedSenders = new Set();
 
 async function startBot() {
   const { state, saveCreds } = await useSupabaseAuthState('bot_session');
