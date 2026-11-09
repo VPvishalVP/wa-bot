@@ -60,12 +60,12 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
 <div class="row" style="margin-top:15px"><button onclick="toggleBot('on')">BOT ON</button><button onclick="toggleBot('off')">BOT OFF</button></div>
 <div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
-<button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
+<button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button><button onclick="logoutAccount()" style="width:100%">LOG OUT</button>
 </section>
 <section class="panel">
 <h2>🔑 REFERENCE PAIRING CODE</h2>
-<label for="phone">WhatsApp number (country code ke saath)</label>
-<input id="phone" inputmode="numeric" placeholder="Example: 919876543210">
+<label for="phone">Your registered WhatsApp number (same as account)</label>
+<input id="phone" inputmode="numeric" placeholder="Account number after login" readonly>
 <button onclick="getPairCode()" style="width:100%">GENERATE PAIRING CODE</button>
 <div id="pairCode" class="code">----</div>
 <p class="note">Code milne par WhatsApp mein Linked Devices → Link a device → Link with phone number se enter karein. Number digits only, country code ke saath.</p>
@@ -81,15 +81,16 @@ AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <footer>AAIRA • Gothic Dark Theme</footer>
 </div>
 <script>
-async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok){document.getElementById('authGate').style.display='none';document.getElementById('phone').value=phone;refreshStatus();}}catch(e){msg.textContent='Server connection failed.'}}
+async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok){document.getElementById('authGate').style.display='none';document.getElementById('phone').value=phone;document.getElementById('phone').readOnly=true;refreshStatus();}}catch(e){msg.textContent='Server connection failed.'}}
 async function forgotAccount(){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)){alert('Phone number country code ke saath enter karein.');return}if(prompt('Account data permanently delete karne ke liye DELETE type karein:')!=='DELETE')return;try{const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,confirm:'DELETE'})});const d=await r.json();document.getElementById('authMessage').textContent=d.message||d.error||'Done';}catch(e){document.getElementById('authMessage').textContent='Server connection failed.'}}
+async function logoutAccount(){try{await fetch('/api/auth/logout',{method:'POST'});location.reload();}catch(e){alert('Logout failed')}}
 async function refreshStatus(){
  try{
   const r=await fetch('/api/status');const d=await r.json();
   const c=document.getElementById('connection');c.textContent=d.connection;
   c.className='pill '+(d.connection==='Connected'?'green':'red');
   document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';
-  document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';
+  document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';document.getElementById('phone').value=d.accountPhone||'';
  }catch(e){document.getElementById('connection').textContent='Status unavailable'}
 }
 async function toggleBot(action){
@@ -124,6 +125,7 @@ function requireWebLogin(req,res,next){const session=getWebSession(req);if(!sess
 function createWebSession(phone,res){const token=crypto.randomBytes(32).toString('hex');webSessions.set(token,{phone,expiresAt:Date.now()+86400000});res.setHeader('Set-Cookie','aaira_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400');}
 app.post('/api/auth/register',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone valid karein aur password 6 se 64 characters ka rakhein (spaces nahi).'});const result=await aairaAuth.register(phone,password);if(result!=='created')return res.status(409).json({error:'Account already exists. Login karein.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Account created, login successful.'});}catch(e){console.error('Register error:',e.message);res.status(500).json({error:'Account create nahi hua. Try again.'});}});
 app.post('/api/auth/login',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');const password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Phone/password format invalid. Password 6-64 characters ka hona chahiye (spaces nahi).'});const result=await aairaAuth.verify(phone,password);if(result!=='ok')return res.status(401).json({error:result==='locked'?'Account 15 minutes locked hai.':'Phone number ya password galat hai.'});createWebSession(phone,res);startUserBot(phone).catch(e=>console.error('User WhatsApp start failed:',e.message));res.json({success:true,message:'Login successful.'});}catch(e){console.error('Login error:',e.message);res.status(500).json({error:'Login failed. Try again.'});}});
+app.post('/api/auth/logout',requireWebLogin,(req,res)=>{const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('aaira_session='))?.slice(14);if(token)webSessions.delete(token);res.setHeader('Set-Cookie','aaira_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');res.json({success:true,message:'Logged out.'});});
 app.post('/api/auth/forgot',async(req,res)=>{try{const phone=String(req.body.phone||'').replace(/\D/g,'');if(!/^\d{10,15}$/.test(phone)||req.body.confirm!=='DELETE')return res.status(400).json({error:'Phone and DELETE confirmation required.'});const result=await aairaAuth.deleteAccount(phone);for(const [token,session] of webSessions){if(session.phone===phone)webSessions.delete(token);}res.json({success:true,message:result==='deleted'?'Stored account data deleted. You can register again.':'Account not found for this number.'});}catch(e){console.error('Delete account error:',e.message);res.status(500).json({error:'Account data delete failed.'});}});
 app.get('/', (req, res) => res.type('html').send(dashboardHtml));
 
