@@ -217,6 +217,8 @@ const assistantReplyRules = [
   { keys: /\b(what can you do|capabilities|kya kar sakti|क्या कर सकती)\b/i, hi: "Main common conversational replies, greetings, basic tips, simple maths, time/date aur AAIRA bot troubleshooting ke programmed messages de sakti hoon. Main internet se live information ya open-ended AI answers generate nahi karti.", en: "I can provide programmed conversational replies, greetings, basic tips, simple math, time/date, and AAIRA bot troubleshooting. I cannot fetch live information or generate open-ended AI answers." }
 ];
 
+const greetedSenders = new Set();
+
 function createAssistantReply(userMessage) {
   const message = String(userMessage || '').trim();
   const lower = message.toLowerCase();
@@ -296,6 +298,12 @@ async function startBot() {
         if (!isBotActive) continue;
 
         if (!isAutoReplyEnabled) continue;
+
+        // Send this welcome message once to each sender during this server run.
+        if (!greetedSenders.has(sender)) {
+          await sock.sendMessage(sender, { text: '*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*' });
+          greetedSenders.add(sender);
+        }
 
         let replyText;
         try {
