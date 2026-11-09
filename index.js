@@ -210,38 +210,134 @@ async function startBot() {
         if (!msg.message || msg.key.fromMe) continue;
         const sender = msg.key.remoteJid;
         if (!sender || sender === 'status@broadcast' || sender.endsWith('@g.us')) continue;
-
+        const phone = sender.split('@')[0].replace(/[^0-9]/g, '');
         const textMessage = (
           msg.message.conversation ||
           msg.message.extendedTextMessage?.text ||
           msg.message.imageMessage?.caption ||
-          msg.message.videoMessage?.caption ||
-          ''
+          msg.message.videoMessage?.caption || ''
         ).trim();
-        if (!textMessage) continue;
+        if (!textMessage || !isBotActive || !isAutoReplyEnabled) continue;
 
-        console.log(`[Incoming Message] From: ${sender} | Text: "${textMessage}"`);
-        if (!isBotActive) continue;
+        const send = (text) => sock.sendMessage(sender, { text });
+        const stage = authStages.get(sender);
 
-        if (!isAutoReplyEnabled) continue;
+        if (textMessage.toLowerCase() === '!reset' || textMessage.toLowerCase() === 'forgot password') {
+          const code = String(crypto.randomInt(100000, 1000000));
+          resetCodes.set(sender, { code, expiresAt: Date.now() + 5 * 60 * 1000, attempts: 0 });
+          authStages.set(sender, 'reset_otp');
+          await send('🔐 Password reset code: *' + code + '*\nYe code 5 minute valid hai. Isi WhatsApp chat mein code enter karein.');
+          continue;
+        }
 
-        // Send this welcome message once to each sender during this server run.
+        if (stage === 'register_password') {
+          if (!/^[0-9]{8}$/.test(textMessage)) {
+            await send('❌ Password exactly 8 digits ka numeric hona chahiye. Naya password enter karein.');
+            continue;
+          }
+          const result = await aairaAuth.register(phone, textMessage);
+          if (result === 'created') {
+            authenticatedSenders.add(sender);
+            authStages.delete(sender);
+            await send('✅ Account create aur verify ho gaya! AAIRA bot ab use kar sakte hain.');
+          } else {
+            authStages.set(sender, 'login_password');
+            await send('Account pehle se hai. 🔑 Apna 8-digit password enter karein.');
+          }
+          continue;
+        }
+
+        if (stage === 'login_password') {
+          if (!/^[0-9]{8}$/.test(textMessage)) {
+            await send('🔑 Password exactly 8 digits ka hona chahiye. Dobara enter karein.');
+            continue;
+          }
+          const result = await aairaAuth.verify(phone, textMessage);
+          if (result === 'ok') {
+            authenticatedSenders.add(sender);
+            authStages.delete(sender);
+            await send('✅ Number aur password verify ho gaye! Welcome to AAIRA.');
+          } else if (result === 'locked') {
+            await send('⏳ 5 wrong attempts ho gaye. Account 15 minutes ke liye locked hai.');
+          } else if (result === 'not_found') {
+            authStages.set(sender, 'register_password');
+            await send('🆕 Account nahi mila. Apna naya *8-digit numeric password* banayein aur bhejein.');
+          } else {
+            await send('❌ Password galat hai. Dobara enter karein, ya password reset ke liye !reset bhejein.');
+          }
+          continue;
+        }
+
+        if (stage === 'reset_otp') {
+          const record = resetCodes.get(sender);
+          if (!record || Date.now() > record.expiresAt) {
+            resetCodes.delete(sender); authStages.delete(sender);
+            await send('⌛ Reset code expire ho gaya. !reset bhej kar naya code lein.');
+            continue;
+          }
+          record.attempts++;
+          if (record.attempts > 5) {
+            resetCodes.delete(sender); authStages.delete(sender);
+            await send('🚫 Too many attempts. !reset bhej kar naya code request karein.');
+            continue;
+          }
+          if (textMessage !== record.code) {
+            await send('❌ Code galat hai. Sahi reset code enter karein.');
+            continue;
+          }
+          resetCodes.delete(sender);
+          authStages.set(sender, 'reset_password');
+          await send('✅ Code verify ho gaya. Ab naya exactly 8-digit password enter karein.');
+          continue;
+        }
+
+        if (stage === 'reset_password') {
+          if (!/^[0-9]{8}$/.test(textMessage)) {
+            await send('❌ Naya password exactly 8 digits ka hona chahiye.');
+            continue;
+          }
+          const result = await aairaAuth.resetPassword(phone, textMessage);
+          authStages.delete(sender);
+          if (result === 'reset') {
+            authenticatedSenders.add(sender);
+            await send('🔐 Password reset successful! AAIRA access restored.');
+          } else {
+            await send('Account nahi mila. Pehle account register karein.');
+          }
+          continue;
+        }
+
+        if (!authenticatedSenders.has(sender)) {
+          const result = await aairaAuth.verify(phone, textMessage);
+          if (result === 'ok') {
+            authenticatedSenders.add(sender);
+            await send('✅ Password verify ho gaya! AAIRA ready hai.');
+            continue;
+          }
+          if (result === 'not_found') {
+            authStages.set(sender, 'register_password');
+            await send('🔐 AAIRA account verification\nAapka WhatsApp number automatically detect hua. Apna naya *8-digit numeric password* enter karein.');
+          } else if (result === 'locked') {
+            await send('⏳ Account 15 minutes ke liye locked hai. Baad mein try karein.');
+          } else {
+            authStages.set(sender, 'login_password');
+            await send('🔑 AAIRA account protected hai. Apna *8-digit password* enter karein. Password bhool gaye? !reset bhejein.');
+          }
+          continue;
+        }
+
         if (!greetedSenders.has(sender)) {
-          await sock.sendMessage(sender, { text: '*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*' });
+          await send('*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(sender);
         }
 
         let replyText;
-        try {
-          replyText = getChatReply(textMessage);
-        } catch (aiErr) {
-          console.error('Chat bank reply failed:', aiErr.message);
-          continue; // Skip sending if the local chat handler errors.
+        try { replyText = getChatReply(textMessage); }
+        catch (aiErr) { console.error('Chat bank reply failed:', aiErr.message); continue; }
+        if (replyText) {
+          await send(replyText);
+          console.log('[Reply Sent Successfully]');
         }
-
-        if (!replyText) continue;
-        await sock.sendMessage(sender, { text: replyText });
-        console.log('[Reply Sent Successfully]');
       } catch (err) {
         console.error('Error processing message:', err);
       }
