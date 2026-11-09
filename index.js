@@ -2,7 +2,6 @@ const express = require('express');
 const { default: makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
 const http = require('http');
-const { getCommonChatReply } = require('./commonChatReplies');
 
 const app = express();
 const server = http.createServer(app);
