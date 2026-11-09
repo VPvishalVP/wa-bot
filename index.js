@@ -1,5 +1,4 @@
 const express = require('express');
-const { generateReply } = require('./replyEngine');
 const { default: makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
 const http = require('http');
@@ -80,7 +79,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <pre>!ping  — Check bot reply
 !menu  — Show commands
 Welcome message — First message from each sender
-Smart auto reply — Hindi/Hinglish template replies</pre>
+Gemini AI auto reply — natural Hindi/Hinglish/English replies</pre>
 <p class="note">Dashboard theme: Gothic Dark • Black & White • Silver glow</p>
 </section>
 <footer>AAIRA • Gothic Dark Theme</footer>
@@ -179,17 +178,8 @@ const chatHistory = new Map();
 const MAX_HISTORY_MESSAGES = 10;
 
 async function generateAIReply(sender, userMessage) {
-  // Deterministic lookup for common acronym/full-form questions (does not call Gemini).
-  const normalizedQuestion = userMessage.toLowerCase().replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim();
-  const knownFullForms = { mp: 'Madhya Pradesh', up: 'Uttar Pradesh', cid: 'Crime Investigation Department (CID)', usa: 'United States of America', uae: 'United Arab Emirates', rbi: 'Reserve Bank of India', cbi: 'Central Bureau of Investigation', isro: 'Indian Space Research Organisation', nasa: 'National Aeronautics and Space Administration', atm: 'Automated Teller Machine', pnr: 'Passenger Name Record', otp: 'One-Time Password', cpu: 'Central Processing Unit', html: 'HyperText Markup Language', www: 'World Wide Web', lpg: 'Liquefied Petroleum Gas', gst: 'Goods and Services Tax', upsc: 'Union Public Service Commission', ips: 'Indian Police Service', ias: 'Indian Administrative Service' };
-  const fullFormMatch = normalizedQuestion.match(/\b([a-z]{2,8})\s*(?:ka|ki)?\s*(?:full\s*form|fullform)\b/) || normalizedQuestion.match(/\b(?:full\s*form|fullform)\s+(?:of\s+)?([a-z]{2,8})\b/);
-  if (fullFormMatch) {
-    const acronym = fullFormMatch[1].toLowerCase();
-    if (knownFullForms[acronym]) return knownFullForms[acronym];
-  }
-
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return generateReply(userMessage);
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
   const history = chatHistory.get(sender) || [];
   const contents = [...history, { role: 'user', parts: [{ text: userMessage }] }];
@@ -301,22 +291,11 @@ async function startBot() {
           msg.message.imageMessage?.caption ||
           msg.message.videoMessage?.caption ||
           ''
-        ).trim().toLowerCase();
+        ).trim();
         if (!textMessage) continue;
 
         console.log(`[Incoming Message] From: ${sender} | Text: "${textMessage}"`);
         if (!isBotActive) continue;
-
-        if (textMessage === '!ping') {
-          await sock.sendMessage(sender, { text: 'Pong! 🏓 Bot is active and running.' });
-          continue;
-        }
-        if (textMessage === '!menu') {
-          await sock.sendMessage(sender, {
-            text: '🤖 *AAIRA WhatsApp Bot Menu*\\n\\n!ping - Check bot status\\n!menu - Show commands\\nSmart Auto Reply - Automatic chatting\\n\\nBot Status: ON ✅'
-          });
-          continue;
-        }
 
         // Send the exact welcome message once when a sender first messages AAIRA.
         if (!greetedUsers.has(sender)) {
@@ -329,8 +308,8 @@ async function startBot() {
         try {
           replyText = await generateAIReply(sender, textMessage);
         } catch (aiErr) {
-          console.error('Gemini reply failed; using local fallback:', aiErr.message);
-          replyText = generateReply(textMessage);
+          console.error('Gemini reply failed; no non-AI fallback will be sent:', aiErr.message);
+          continue;
         }
 
         await sock.sendMessage(sender, { text: replyText });
