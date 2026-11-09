@@ -100,11 +100,15 @@ function message(t,success){var m=document.getElementById('authMessage');if(!m)r
 }
 async function submit(action){
 if(busy)return;
-var phone=(document.getElementById('authPhone').value||'').replace(/\D/g,'');
+var rawPhone=(document.getElementById('authPhone').value||'').trim();
+// Convert Unicode decimal digits (including Hindi numerals) to ASCII, then remove separators.
+var phone=Array.from(rawPhone).map(function(ch){var cp=ch.codePointAt(0);var starts=[0x0660,0x06F0,0x0966,0x09E6,0x0A66,0x0AE6,0x0B66,0x0BE6,0x0C66,0x0CE6,0x0D66,0x0E50,0x0ED0,0x0F20,0x1040,0x17E0,0x1810,0xFF10];for(var s of starts){if(cp>=s&&cp<=s+9)return String(cp-s);}return ch;}).join('').replace(/[^0-9]/g,'');
 var password=document.getElementById('authPassword').value||'';
-// India users may enter their local 10-digit mobile number; add country code 91 automatically.
-if(/^\d{10}$/.test(phone)){phone='91'+phone;document.getElementById('authPhone').value=phone;}
-if(!/^\d{10,15}$/.test(phone)){message('10 digit mobile number ya country code ke saath 10-15 digits enter karein.');return;}
+// Accept a local Indian 10-digit mobile number, optional leading zero, or country code 91.
+if(/^0[6-9][0-9]{9}$/.test(phone)){phone=phone.slice(1);}
+if(/^[6-9][0-9]{9}$/.test(phone)){phone='91'+phone;}
+if(phone.length<10||phone.length>15){message('Number mein '+phone.length+' digits detect hue. 10 digit Indian mobile ya +91 ke saath 12 digits daalein.');return;}
+document.getElementById('authPhone').value=phone;
 if(!/^\S{6,64}$/.test(password)){message('Password 6-64 characters ka hona chahiye (spaces nahi).');return;}
 busy=true;var l=document.getElementById('loginBtn'),rbtn=document.getElementById('registerBtn');l.disabled=true;rbtn.disabled=true;
 var prevL=l.textContent,prevR=rbtn.textContent;l.textContent='PLEASE WAIT…';rbtn.textContent='PLEASE WAIT…';
