@@ -129,14 +129,17 @@ async function startAccountBot(accountPhone) {
   const bot = {
     sock: null,
     connectionStatus: 'Connecting',
-    botActive: false,
-    autoReplyEnabled: false,
+    botActive: true,
+    autoReplyEnabled: true,
     greetedSenders: new Set(),
     displayName: 'VIHUHUHU'
   };
   accountBots.set(accountPhone, bot);
 
   try {
+    const savedSettings = await aairaAuth.getBotSettings(accountPhone);
+    bot.botActive = savedSettings.botActive;
+    bot.autoReplyEnabled = savedSettings.autoReplyEnabled;
     bot.displayName = await aairaAuth.getDisplayName(accountPhone);
     const { state, saveCreds } = await useSupabaseAuthState('account_' + accountPhone);
     const socket = makeWASocket({
@@ -162,10 +165,10 @@ async function startAccountBot(accountPhone) {
 
         // Ignore stale socket close events; schedule at most one reconnect per account.
         if (accountBots.get(accountPhone) === bot) {
-          accountBots.delete(accountPhone);
           if (statusCode !== DisconnectReason.loggedOut && !reconnectTimers.has(accountPhone)) {
             const timer = setTimeout(() => {
               reconnectTimers.delete(accountPhone);
+              if (accountBots.get(accountPhone) === bot) accountBots.delete(accountPhone);
               startAccountBot(accountPhone).catch(console.error);
             }, 3000);
             reconnectTimers.set(accountPhone, timer);
@@ -242,21 +245,19 @@ app.get('/api/status', requireWebLogin, (req, res) => {
   });
 });
 
-app.get('/toggle', requireWebLogin, (req, res) => {
+app.get('/toggle', requireWebLogin, async (req, res) => {
   const bot = getAccountBot(req);
   if (!bot) return res.status(503).json({ error: 'WhatsApp bot session is not initialized yet.' });
   const action = String(req.query.action || '').toLowerCase();
-  if (action === 'on') { bot.botActive = true; return res.json({ success: true, message: 'Bot is now ON ✅', botStatus: 'ON' }); }
-  if (action === 'off') { bot.botActive = false; return res.json({ success: true, message: 'Bot is now OFF ❌', botStatus: 'OFF' }); }
+  if (action === 'on' || action === 'off') { try { const value = action === 'on'; await aairaAuth.setBotSetting(getWebSession(req).phone, 'botActive', value); bot.botActive = value; return res.json({ success: true, message: value ? 'Bot is now ON ✅' : 'Bot is now OFF ❌', botStatus: value ? 'ON' : 'OFF' }); } catch (e) { console.error('Save bot status error:', e.message); return res.status(500).json({ error: 'Bot status save nahi hua.' }); } }
   res.json({ success: true, botStatus: bot.botActive ? 'ON' : 'OFF' });
 });
 
-app.get('/auto-reply', requireWebLogin, (req, res) => {
+app.get('/auto-reply', requireWebLogin, async (req, res) => {
   const bot = getAccountBot(req);
   if (!bot) return res.status(503).json({ error: 'WhatsApp bot session is not initialized yet.' });
   const action = String(req.query.action || '').toLowerCase();
-  if (action === 'on') { bot.autoReplyEnabled = true; return res.json({ success: true, message: 'Auto-reply is now ON ✅', autoReply: 'ON' }); }
-  if (action === 'off') { bot.autoReplyEnabled = false; return res.json({ success: true, message: 'Auto-reply is now OFF ❌', autoReply: 'OFF' }); }
+  if (action === 'on' || action === 'off') { try { const value = action === 'on'; await aairaAuth.setBotSetting(getWebSession(req).phone, 'autoReplyEnabled', value); bot.autoReplyEnabled = value; return res.json({ success: true, message: value ? 'Auto-reply is now ON ✅' : 'Auto-reply is now OFF ❌', autoReply: value ? 'ON' : 'OFF' }); } catch (e) { console.error('Save auto-reply status error:', e.message); return res.status(500).json({ error: 'Auto-reply status save nahi hua.' }); } }
   res.json({ success: true, autoReply: bot.autoReplyEnabled ? 'ON' : 'OFF' });
 });
 
