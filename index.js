@@ -139,7 +139,15 @@ async function startAccountBot(ownerPhone){
     const oldLockTimer=accountLockTimers.get(ownerPhone);if(oldLockTimer)clearInterval(oldLockTimer);
     const lockTimer=setInterval(()=>{aairaAuth.claimWhatsAppSessionLock(ownerPhone,instanceToken,120).then(ok=>{if(!ok){console.error('[WA] Session lock lost for account',ownerPhone);const active=accountSockets.get(ownerPhone);if(active===socket){accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');try{socket.end(undefined);}catch(e){}}}}).catch(e=>console.error('[WA] Session lock renewal failed:',e.message));},45000);accountLockTimers.set(ownerPhone,lockTimer);
     accountSockets.set(ownerPhone,socket);accountStatus.set(ownerPhone,'Connecting');
-    socket.ev.on('creds.update',saveCreds);
+    // Persist WhatsApp credentials to Supabase immediately whenever Baileys updates them.
+    socket.ev.on('creds.update',async()=>{
+      try{
+        await saveCreds();
+        console.log('[WA] Session credentials saved for account',ownerPhone);
+      }catch(err){
+        console.error('[WA] Session credentials save failed for account',ownerPhone,err.message);
+      }
+    });
     socket.ev.on('connection.update',async(update)=>{
       const {connection,lastDisconnect}=update;
       if(connection==='open'){accountStatus.set(ownerPhone,'Connected');console.log('[WA] Connected account',ownerPhone);}
