@@ -119,7 +119,7 @@ var response;
 try{response=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({phone:phone,password:password}),signal:controller.signal});}
 finally{clearTimeout(timer);}
 var data={};try{data=await response.json()}catch(_){}
-if(response.ok&&data.success){message(data.message||'Success! Dashboard load ho raha hai.',true);document.getElementById('authGate').style.display='none';setTimeout(function(){window.location.reload()},500);}
+if(response.ok&&data.success){message(data.message||'Success! Dashboard load ho raha hai.',true);document.getElementById('authGate').style.display='none';}
 else message('❌ '+(data.error||data.message||('Server response HTTP '+response.status)));
 }catch(e){message(e.name==='AbortError'?'Server timeout (30 sec). Retry karein.':'Request fail: '+(e.message||'network error'));}
 finally{busy=false;l.disabled=false;rbtn.disabled=false;l.textContent=prevL;rbtn.textContent=prevR;}
