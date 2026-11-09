@@ -216,7 +216,6 @@ async function startAccountBot(accountPhone, ownerToken = crypto.randomUUID()) {
       printQRInTerminal: false,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
-      browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
     bot.sock = socket;
     socket.ev.on('creds.update', saveCreds);
