@@ -65,6 +65,14 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
 </section>
 <section class="panel">
+<h2>💗 GREETING NAME CUSTOMIZATION</h2>
+<label for="assistantName">Greeting mein aapka naam (har account ka alag)</label>
+<input id="assistantName" maxlength="30" placeholder="VIHUHUHU">
+<button onclick="saveAssistantName()" style="width:100%">SAVE GREETING NAME</button>
+<p id="assistantNameMessage" class="note">Default naam: VIHUHUHU</p>
+<p class="note">Yeh naam sirf aapke logged-in WhatsApp account ke greeting mein use hoga. AAIRA aur baaki message same rahenge.</p>
+</section>
+<section class="panel">
 <h2>🔑 REFERENCE PAIRING CODE</h2>
 <label for="phone">WhatsApp number (country code ke saath)</label>
 <input id="phone" inputmode="numeric" placeholder="Example: 919876543210">
@@ -83,8 +91,10 @@ AAIRA fixed assistant replies — common Hindi/Hinglish/English topics</pre>
 <footer>AAIRA • Gothic Dark Theme</footer>
 </div>
 <script>
-async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok)document.getElementById('authGate').style.display='none';}catch(e){msg.textContent='Server connection failed.'}}
+async function authAction(action){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');const password=document.getElementById('authPassword').value;const msg=document.getElementById('authMessage');if(!/^\\d{10,15}$/.test(phone)){msg.textContent='Valid phone number country code ke saath enter karein.';return}if(!/^\\S{6,64}$/.test(password)){msg.textContent='Password 6-64 characters ka hona chahiye (spaces allowed nahi).';return}try{const r=await fetch('/api/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});const d=await r.json();msg.textContent=d.message||d.error||'Request complete';if(r.ok){document.getElementById('authGate').style.display='none';loadAssistantName();}}catch(e){msg.textContent='Server connection failed.'}}
 async function forgotAccount(){const phone=document.getElementById('authPhone').value.replace(/\\D/g,'');if(!/^\\d{10,15}$/.test(phone)){alert('Phone number country code ke saath enter karein.');return}if(prompt('Account data permanently delete karne ke liye DELETE type karein:')!=='DELETE')return;try{const r=await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,confirm:'DELETE'})});const d=await r.json();document.getElementById('authMessage').textContent=d.message||d.error||'Done';}catch(e){document.getElementById('authMessage').textContent='Server connection failed.'}}
+async function loadAssistantName(){try{const r=await fetch('/api/assistant-name');const d=await r.json();if(r.ok){document.getElementById('assistantName').value=d.displayName||'VIHUHUHU';document.getElementById('assistantNameMessage').textContent='Saved naam: '+(d.displayName||'VIHUHUHU')}}catch(e){document.getElementById('assistantNameMessage').textContent='Naam load nahi hua.'}}
+async function saveAssistantName(){const displayName=document.getElementById('assistantName').value.trim();const msg=document.getElementById('assistantNameMessage');if(!displayName||displayName.length>30){msg.textContent='Naam 1 se 30 characters ka rakhein.';return}try{const r=await fetch('/api/assistant-name',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName})});const d=await r.json();msg.textContent=r.ok?'Saved! Greeting mein '+d.displayName+' bolega.':(d.error||'Save nahi hua.')}catch(e){msg.textContent='Server connection failed.'}}
 async function refreshStatus(){try{const r=await fetch('/api/status');const d=await r.json();const c=document.getElementById('connection');c.textContent=d.connection;c.className='pill '+(d.connection==='Connected'?'green':'red');document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';}catch(e){document.getElementById('connection').textContent='Status unavailable'}}
 async function toggleBot(action){const r=await fetch('/toggle?action='+action);const d=await r.json();alert(d.message||d.botStatus);refreshStatus()}
 async function toggleAuto(action){const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus()}
@@ -120,11 +130,13 @@ async function startAccountBot(accountPhone) {
     connectionStatus: 'Connecting',
     botActive: false,
     autoReplyEnabled: false,
-    greetedSenders: new Set()
+    greetedSenders: new Set(),
+    displayName: 'VIHUHUHU'
   };
   accountBots.set(accountPhone, bot);
 
   try {
+    bot.displayName = await aairaAuth.getDisplayName(accountPhone);
     const { state, saveCreds } = await useSupabaseAuthState('account_' + accountPhone);
     const socket = makeWASocket({
       auth: state,
@@ -163,7 +175,7 @@ async function startAccountBot(accountPhone) {
           if (!textMessage || !bot.botActive || !bot.autoReplyEnabled) continue;
           const send = (text) => socket.sendMessage(sender, { text });
           if (!bot.greetedSenders.has(sender)) {
-            await send('*Heyy! 💗 Mai VIHUHUHU KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+            await send('*Heyy! 💗 Mai ' + bot.displayName + ' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
             bot.greetedSenders.add(sender);
           }
           const replyText = getChatReply(textMessage);
@@ -179,6 +191,36 @@ async function startAccountBot(accountPhone) {
     throw err;
   }
 }
+
+app.get('/api/assistant-name', requireWebLogin, async (req, res) => {
+  try {
+    const session = getWebSession(req);
+    const displayName = await aairaAuth.getDisplayName(session.phone);
+    const bot = getAccountBot(req);
+    if (bot) bot.displayName = displayName;
+    res.json({ success: true, displayName });
+  } catch (e) {
+    console.error('Load greeting name error:', e.message);
+    res.status(500).json({ error: 'Greeting name load nahi hua.' });
+  }
+});
+
+app.put('/api/assistant-name', requireWebLogin, async (req, res) => {
+  try {
+    const session = getWebSession(req);
+    const displayName = String(req.body.displayName || '').trim().toUpperCase();
+    if (!displayName || displayName.length > 30) {
+      return res.status(400).json({ error: 'Naam 1 se 30 characters ka rakhein.' });
+    }
+    await aairaAuth.setDisplayName(session.phone, displayName);
+    const bot = getAccountBot(req);
+    if (bot) bot.displayName = displayName;
+    res.json({ success: true, displayName });
+  } catch (e) {
+    console.error('Save greeting name error:', e.message);
+    res.status(500).json({ error: 'Greeting name save nahi hua.' });
+  }
+});
 
 app.get('/api/status', requireWebLogin, (req, res) => {
   const bot = getAccountBot(req);
