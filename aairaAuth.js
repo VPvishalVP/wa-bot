@@ -30,4 +30,21 @@ async function deleteAccount(phone) {
   return callAuthRpc('aaira_delete_account', { p_phone: phone });
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount };
+async function getDisplayName(phone) {
+  const { data, error } = await supabase
+    .from('aaira_account_settings')
+    .select('display_name')
+    .eq('phone', phone)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.display_name || 'VIHUHUHU';
+}
+async function setDisplayName(phone, displayName) {
+  const { error } = await supabase
+    .from('aaira_account_settings')
+    .upsert({ phone, display_name: displayName, updated_at: new Date().toISOString() }, { onConflict: 'phone' });
+  if (error) throw error;
+  return displayName;
+}
+
+module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName };
