@@ -68,11 +68,30 @@ async function setDisplayName(phone, displayName) {
   return displayName;
 }
 
-
+// Only resume accounts that have a registered WhatsApp auth session.
+// Dashboard registrations without a paired WhatsApp session must not start reconnect loops.
 async function listRegisteredPhones() {
-  const { data, error } = await supabase.from('aaira_user_credentials').select('phone');
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('session_id, data')
+    .eq('key', 'creds')
+    .like('session_id', 'account_%');
   if (error) throw error;
-  return (data || []).map(row => row.phone).filter(Boolean);
+
+  const phones = [];
+  for (const row of data || []) {
+    const match = /^account_(\d{8,20})$/.exec(row.session_id || '');
+    if (!match) continue;
+
+    let creds = row.data;
+    if (typeof creds === 'string') {
+      try { creds = JSON.parse(creds); } catch { continue; }
+    }
+    if (creds?.registered === true || creds?.registered === 'true') {
+      phones.push(match[1]);
+    }
+  }
+  return [...new Set(phones)];
 }
 
 async function claimWhatsAppSessionLock(phone, ownerToken, leaseSeconds = 120) {
