@@ -109,7 +109,7 @@ if(/^0[6-9][0-9]{9}$/.test(phone)){phone=phone.slice(1);}
 if(/^[6-9][0-9]{9}$/.test(phone)){phone='91'+phone;}
 if(phone.length<10||phone.length>15){message('Number mein '+phone.length+' digits detect hue. 10 digit Indian mobile ya +91 ke saath 12 digits daalein.');return;}
 document.getElementById('authPhone').value=phone;
-if(!/^[^\s]{6,64}$/.test(password)){message('Password 6 se 64 characters ka rakhein; spaces allowed nahi hain.');return;}
+if(!/^[^\\s]{6,64}$/.test(password)){message('Password 6 se 64 characters ka rakhein; spaces allowed nahi hain.');return;}
 busy=true;var l=document.getElementById('loginBtn'),rbtn=document.getElementById('registerBtn');l.disabled=true;rbtn.disabled=true;
 var prevL=l.textContent,prevR=rbtn.textContent;l.textContent='PLEASE WAIT…';rbtn.textContent='PLEASE WAIT…';
 message(action==='login'?'Login request bhej rahe hain…':'Register request bhej rahe hain…',true);
