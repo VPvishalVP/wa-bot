@@ -116,6 +116,7 @@ const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 
 const accountBots = new Map();
+const reconnectTimers = new Map();
 
 function getAccountBot(req) {
   const session = getWebSession(req);
@@ -158,9 +159,17 @@ async function startAccountBot(accountPhone) {
         bot.connectionStatus = 'Disconnected';
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log('WhatsApp closed for account:', accountPhone, statusCode);
-        if (statusCode !== DisconnectReason.loggedOut) {
+
+        // Ignore stale socket close events; schedule at most one reconnect per account.
+        if (accountBots.get(accountPhone) === bot) {
           accountBots.delete(accountPhone);
-          setTimeout(() => startAccountBot(accountPhone).catch(console.error), 3000);
+          if (statusCode !== DisconnectReason.loggedOut && !reconnectTimers.has(accountPhone)) {
+            const timer = setTimeout(() => {
+              reconnectTimers.delete(accountPhone);
+              startAccountBot(accountPhone).catch(console.error);
+            }, 3000);
+            reconnectTimers.set(accountPhone, timer);
+          }
         }
       }
     });
