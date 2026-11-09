@@ -9,6 +9,11 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+let sock = null;
+let isBotActive = false;
+let isAutoReplyEnabled = false;
+let connectionStatus = 'Disconnected';
+
 // WhatsApp sockets and bot settings are isolated per authenticated website account.
 
 const dashboardHtml = `<!DOCTYPE html>
