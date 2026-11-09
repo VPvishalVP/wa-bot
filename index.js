@@ -174,6 +174,43 @@ app.get('/pair', async (req, res) => {
   }
 });
 
+// Gemini-powered natural chat. Conversation context stays in server RAM and is limited per sender.
+const chatHistory = new Map();
+const MAX_HISTORY_MESSAGES = 10;
+
+async function generateAIReply(sender, userMessage) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return generateReply(userMessage);
+
+  const history = chatHistory.get(sender) || [];
+  const contents = [...history, { role: 'user', parts: [{ text: userMessage }] }];
+
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: 'You are AAIRA, a friendly, warm WhatsApp chat companion. Reply naturally in the language and style the user uses, especially casual Hindi/Hinglish. Keep replies concise and conversational, usually 1-4 sentences. Ask follow-up questions when helpful. Do not claim to be a human or give unsafe instructions.' }]
+      },
+      contents,
+      generationConfig: { temperature: 0.85, maxOutputTokens: 350 }
+    }),
+    signal: AbortSignal.timeout(25000)
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || 'Gemini API request failed');
+  const reply = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('').trim();
+  if (!reply) throw new Error('Gemini returned an empty response');
+
+  chatHistory.set(sender, [
+    ...history,
+    { role: 'user', parts: [{ text: userMessage }] },
+    { role: 'model', parts: [{ text: reply }] }
+  ].slice(-MAX_HISTORY_MESSAGES));
+  return reply;
+}
+
 function choose(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
@@ -272,16 +309,17 @@ async function startBot() {
           continue;
         }
 
-        // First message per sender (RAM memory): welcome text only, no audio/voice.
-        if (!greetedUsers.has(sender)) {
-          greetedUsers.add(sender);
-          await sock.sendMessage(sender, { text: WELCOME_MESSAGE });
-          continue;
-        }
-
+        // Mark sender greeted, then answer with Gemini AI on every incoming chat message.
+        if (!greetedUsers.has(sender)) greetedUsers.add(sender);
         if (!isAutoReplyEnabled) continue;
 
-        const replyText = generateReply(textMessage);
+        let replyText;
+        try {
+          replyText = await generateAIReply(sender, textMessage);
+        } catch (aiErr) {
+          console.error('Gemini reply failed; using local fallback:', aiErr.message);
+          replyText = generateReply(textMessage);
+        }
 
         await sock.sendMessage(sender, { text: replyText });
         console.log('[Reply Sent Successfully]');
