@@ -321,4 +321,15 @@ app.get('/pair', requireWebLogin, async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+  // Resume persisted WhatsApp accounts after Render process restart without requiring dashboard login.
+  aairaAuth.listRegisteredPhones()
+    .then(phones => {
+      console.log('Auto-resume checking registered WhatsApp accounts:', phones.length);
+      for (const phone of phones) {
+        startAccountBot(phone).catch(err => console.error('WhatsApp auto-resume failed for account:', phone, err.message));
+      }
+    })
+    .catch(err => console.error('WhatsApp auto-resume account list failed:', err.message));
+});
