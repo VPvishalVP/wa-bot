@@ -69,6 +69,12 @@ async function setDisplayName(phone, displayName) {
 }
 
 
+async function listRegisteredPhones() {
+  const { data, error } = await supabase.from('aaira_user_credentials').select('phone');
+  if (error) throw error;
+  return (data || []).map(row => row.phone).filter(Boolean);
+}
+
 async function claimWhatsAppSessionLock(phone, ownerToken, leaseSeconds = 120) {
   return callAuthRpc('claim_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken, p_lease_seconds: leaseSeconds });
 }
@@ -76,4 +82,4 @@ async function releaseWhatsAppSessionLock(phone, ownerToken) {
   return callAuthRpc('release_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken });
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock };
+module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones };
