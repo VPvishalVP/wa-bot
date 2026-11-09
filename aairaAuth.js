@@ -68,4 +68,12 @@ async function setDisplayName(phone, displayName) {
   return displayName;
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting };
+
+async function claimWhatsAppSessionLock(phone, ownerToken, leaseSeconds = 120) {
+  return callAuthRpc('claim_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken, p_lease_seconds: leaseSeconds });
+}
+async function releaseWhatsAppSessionLock(phone, ownerToken) {
+  return callAuthRpc('release_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken });
+}
+
+module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock };
