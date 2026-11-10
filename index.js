@@ -168,7 +168,7 @@ async function startAccountBot(ownerPhone){
     try{const savedChats=await aairaAuth.loadLiveChatBuffer(ownerPhone);liveChatBuffers.set(ownerPhone,savedChats.slice(-1000));}catch(e){console.error('[LIVE CHAT] Restore failed:',e.message);}
     const {state,saveCreds,clearAuthState}=await useSupabaseAuthState('account_'+ownerPhone);
     let waVersion;try{const live=await fetchLatestWaWebVersion();if(Array.isArray(live?.version)&&live.version.length===3)waVersion=live.version;}catch(e){console.warn('[WA] Version lookup:',e.message);}
-    const socket=makeWASocket({... (waVersion?{version:waVersion}:{}),auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,syncFullHistory:true,shouldSyncHistoryMessage:()=>true,browser:['Ubuntu','Chrome','20.0.04']});
+    const socket=makeWASocket({... (waVersion?{version:waVersion}:{}),auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,syncFullHistory:false,shouldSyncHistoryMessage:()=>false,browser:['Ubuntu','Chrome','20.0.04']});
     const oldLockTimer=accountLockTimers.get(ownerPhone);if(oldLockTimer)clearInterval(oldLockTimer);
     const lockTimer=setInterval(()=>{aairaAuth.claimWhatsAppSessionLock(ownerPhone,instanceToken,120).then(ok=>{if(!ok){console.error('[WA] Session lock lost for account',ownerPhone);const active=accountSockets.get(ownerPhone);if(active===socket){accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');try{socket.end(undefined);}catch(e){}}}}).catch(e=>console.error('[WA] Session lock renewal failed:',e.message));},45000);accountLockTimers.set(ownerPhone,lockTimer);
     accountSockets.set(ownerPhone,socket);accountStatus.set(ownerPhone,'Connecting');
