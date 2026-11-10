@@ -229,13 +229,28 @@ async function startAccountBot(ownerPhone){
         const contextKey=ownerPhone+':'+sender;
         const chatHistory=recentChatContexts.get(contextKey)||[];
         let replyText;
+        let generatedByAI=false;
         try{
           const aiSettings=await aairaAuth.getAISettings(ownerPhone);
-          if(aiSettings.groqAIEnabled&&aiSettings.savedModelEnabled&&process.env.GROQ_API_KEY){replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});}
+          if(aiSettings.groqAIEnabled&&aiSettings.savedModelEnabled&&process.env.GROQ_API_KEY){
+            replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});
+            generatedByAI=!!replyText;
+          }
           if(!replyText)replyText=getChatReply(textMessage,{history:chatHistory.slice()});
         }catch(e){
           console.error('[GROQ] AI reply failed; using fixed replies:',e.message);
           try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});}catch(fallbackError){console.error('[WA] Chat reply error:',fallbackError.message);continue;}
+        }
+        // Re-check live switches after a potentially slow model call to prevent stale AI output.
+        const latestBotSettings=await aairaAuth.getBotSettings(ownerPhone);
+        if(!latestBotSettings.botActive||!latestBotSettings.autoReplyEnabled)continue;
+        if(generatedByAI){
+          const latestAISettings=await aairaAuth.getAISettings(ownerPhone);
+          if(!latestAISettings.groqAIEnabled||!latestAISettings.savedModelEnabled){
+            console.log('[AI] Discarded generated reply because AI was switched OFF for account',ownerPhone);
+            replyText=getChatReply(textMessage,{history:chatHistory.slice()});
+            generatedByAI=false;
+          }
         }
         chatHistory.push({role:'user',text:textMessage});
         if(replyText)chatHistory.push({role:'assistant',text:replyText});
