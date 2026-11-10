@@ -142,6 +142,7 @@ app.get('/toggle', requireWebLogin, async(req,res)=>{try{const owner=getWebSessi
 app.get('/auto-reply', requireWebLogin, async(req,res)=>{try{const owner=getWebSession(req).phone;const action=String(req.query.action||'').toLowerCase();if(!['on','off'].includes(action))return res.status(400).json({error:'Invalid action'});const value=action==='on';await aairaAuth.setBotSetting(owner,'autoReplyEnabled',value);res.json({success:true,message:value?'Auto-reply is now ON ✅':'Auto-reply is now OFF ❌',autoReply:value?'ON':'OFF'});}catch(e){console.error('Auto-reply setting error:',e.message);res.status(500).json({error:'Auto-reply setting save failed'});}});
 app.get('/pair', requireWebLogin, async(req,res)=>{const owner=getWebSession(req).phone;const phoneNumber=String(req.query.phone||'').replace(/[^0-9]/g,'');if(!/^\d{8,15}$/.test(phoneNumber))return res.status(400).json({error:'Phone number required with country code, e.g. 919876543210'});if(phoneNumber!==owner)return res.status(403).json({error:'AAIRA account aur WhatsApp number same hone chahiye. Apne registered mobile number ka WhatsApp connect karein.'});try{let socket=accountSockets.get(owner);if(!socket){await startAccountBot(owner);socket=accountSockets.get(owner);}if(!socket?.authState?.creds)return res.status(503).json({error:'WhatsApp socket initialize nahi hua. Refresh karke dobara try karein.'});if(socket.authState.creds.registered)return res.json({success:true,message:'WhatsApp session already registered.'});res.setHeader('Cache-Control','no-store');await new Promise(resolve=>setTimeout(resolve,1800));socket=accountSockets.get(owner);if(!socket||accountStatus.get(owner)==='Disconnected')return res.status(503).json({error:'WhatsApp connection band hai. Thodi der baad dobara try karein.'});let code=await socket.requestPairingCode(phoneNumber);code=code?.match(/.{1,4}/g)?.join('-')||code;if(!code)throw new Error('Empty pairing code');res.json({success:true,pairingCode:code});}catch(err){console.error('[PAIR] Pairing error:',err.message);res.status(500).json({error:'Pairing code generate nahi hua: '+String(err?.message||'Connection error').slice(0,100)});}});
 const { getChatReply } = require('./chatBank');
+const { getGroqReply } = require('./groqAI');
 const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
@@ -219,14 +220,24 @@ async function startAccountBot(ownerPhone){
         if(!settings.botActive||!settings.autoReplyEnabled)continue;
         const send=(text)=>socket.sendMessage(sender,{text});
         const greetingKey=ownerPhone+':'+sender;
+        let greetingName='VIHUHUHU';
+        try{greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim()||'VIHUHUHU';}catch(e){console.warn('[WA] Greeting name lookup:',e.message);}
         if(!greetedSenders.has(greetingKey)){
-          let greetingName='VIHUHUHU';try{greetingName=await aairaAuth.getDisplayName(ownerPhone);}catch(e){console.warn('[WA] Greeting name lookup:',e.message);}
-          await send('*Heyy! 💗 Mai '+greetingName+' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+          await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(greetingKey);
         }
         const contextKey=ownerPhone+':'+sender;
         const chatHistory=recentChatContexts.get(contextKey)||[];
-        let replyText;try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});}catch(e){console.error('[WA] Chat reply error:',e.message);continue;}
+        let replyText;
+        try{
+          if(process.env.GROQ_API_KEY){
+            replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});
+          }
+          if(!replyText)replyText=getChatReply(textMessage,{history:chatHistory.slice()});
+        }catch(e){
+          console.error('[GROQ] AI reply failed; using fixed replies:',e.message);
+          try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});}catch(fallbackError){console.error('[WA] Chat reply error:',fallbackError.message);continue;}
+        }
         chatHistory.push({role:'user',text:textMessage});
         if(replyText)chatHistory.push({role:'assistant',text:replyText});
         if(chatHistory.length>12)chatHistory.splice(0,chatHistory.length-12);
