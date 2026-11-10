@@ -4,7 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const router = express.Router();
 const supabase = createClient('https://rthezmmpatudgjfahsrv.supabase.co', process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false,autoRefreshToken:false}});
 const sessions = new Map();
-const cleanPhone = v => String(v || '').replace(/\\D/g,'');
+const cleanPhone = v => String(v || '').replace(/\D/g,'');
 function adminSession(req){const token=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('aaira_admin='))?.slice('aaira_admin='.length);const s=token&&sessions.get(token);if(s&&s.expires>Date.now())return s;if(token)sessions.delete(token);return null;}
 function requireAdmin(req,res,next){if(!adminSession(req))return res.status(401).json({error:'Admin login required'});next();}
 function equalSecret(a,b){const x=Buffer.from(String(a)),y=Buffer.from(String(b));return x.length===y.length&&crypto.timingSafeEqual(x,y);}
