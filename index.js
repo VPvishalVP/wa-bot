@@ -14,6 +14,8 @@ let isBotActive = true;
 let isAutoReplyEnabled = true;
 let connectionStatus = 'Disconnected';
 let currentDashboardOwnerPhone = null;
+const liveChatBuffers=new Map(),liveChatListeners=new Map();
+function publishLiveChat(owner,item){if(!owner||!item?.jid||!item?.text)return;let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}if(item.id&&b.some(x=>x.id===item.id))return;b.push({id:item.id||crypto.randomUUID(),jid:item.jid,text:String(item.text).slice(0,4000),fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()});if(b.length>100)b.splice(0,b.length-100);for(const fn of liveChatListeners.get(owner)||[]){try{fn(b[b.length-1])}catch{}}}
 
 const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -49,6 +51,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .code{font-size:26px;letter-spacing:5px;text-align:center;padding:15px;color:#fff;
 border:1px dashed #aaa;border-radius:12px;margin-top:12px;min-height:60px}
 .note{font-size:12px;color:#aaa;line-height:1.6}
+.chat-layout{display:grid;grid-template-columns:minmax(110px,32%) 1fr;gap:10px;min-height:300px}.chat-contacts,.chat-messages{border:1px solid #555;border-radius:10px;padding:8px;min-width:0}.chat-contacts{max-height:360px;overflow:auto}.contact{display:block;width:100%;text-align:left;margin:3px 0;overflow-wrap:anywhere}.chat-messages{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;background:#050505}.bubble{max-width:90%;padding:9px 11px;border:1px solid #666;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}.bubble.in{align-self:flex-start}.bubble.out{align-self:flex-end;border-color:#aaa;background:#171717}.chat-compose{display:flex;gap:6px;margin-top:10px}.chat-compose input{margin:0;flex:1;min-width:0}
 pre{white-space:pre-wrap;color:#ddd;font-size:13px}
 footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </style>
@@ -63,6 +66,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
 <button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
 </section>
+<section class="panel"><h2>💬 LIVE WHATSAPP CHAT</h2><p id="liveChatStatus" class="note">Login ke baad live chat connect hoga. Messages permanently save nahi hote.</p><div class="chat-layout"><div id="liveChatContacts" class="chat-contacts"><p class="note">Live contacts yahan aayenge</p></div><div id="liveChatMessages" class="chat-messages"><p class="note">Koi live message nahi hai.</p></div></div><div class="chat-compose"><input id="liveChatReply" placeholder="Reply likhein..." maxlength="4000"><button onclick="sendLiveChatReply()">SEND</button></div></section>
 <section class="panel">
 <h2>💗 GREETING NAME SETTINGS</h2>
 <label for="displayName">Greeting mein naam (VIHUHUHU ko badlein)</label>
@@ -98,6 +102,11 @@ async function toggleBot(action){const r=await fetch('/toggle?action='+action);c
 async function toggleAuto(action){const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus()}
 async function getPairCode(){const phone=document.getElementById('phone').value.replace(/\\D/g,'');const box=document.getElementById('pairCode');if(!phone){alert('WhatsApp number enter karein');return}box.textContent='Generating...';try{const r=await fetch('/pair?phone='+encodeURIComponent(phone));const d=await r.json();box.textContent=d.pairingCode||d.message||d.error||'Could not generate code';if(!r.ok)alert(d.error||'Pairing code error')}catch(e){box.textContent='Request failed';alert('Server se connection nahi hua')}}
 refreshStatus();loadDisplayName();setInterval(refreshStatus,10000);
+let liveChatSource=null,liveChatItems=[],selectedLiveJid=null;
+function connectLiveChat(){if(liveChatSource)liveChatSource.close();liveChatSource=new EventSource('/api/live-chat/stream');liveChatSource.onopen=()=>document.getElementById('liveChatStatus').textContent='Live chat connected • RAM-only • history save nahi hoti';liveChatSource.onerror=()=>document.getElementById('liveChatStatus').textContent='Live chat reconnecting / login required';liveChatSource.addEventListener('snapshot',e=>{liveChatItems=JSON.parse(e.data);renderLiveChats()});liveChatSource.addEventListener('message',e=>{const item=JSON.parse(e.data);liveChatItems.push(item);if(liveChatItems.length>100)liveChatItems=liveChatItems.slice(-100);if(!selectedLiveJid)selectedLiveJid=item.jid;renderLiveChats()})}
+function renderLiveChats(){const contacts=document.getElementById('liveChatContacts'),messages=document.getElementById('liveChatMessages'),jids=[...new Set(liveChatItems.map(x=>x.jid))];contacts.replaceChildren();if(!jids.length){const p=document.createElement('p');p.className='note';p.textContent='Live contacts yahan aayenge';contacts.appendChild(p)}jids.forEach(jid=>{const b=document.createElement('button');b.className='contact';b.textContent=jid.replace(/@.*/,'');b.onclick=()=>{selectedLiveJid=jid;renderLiveChats()};contacts.appendChild(b)});messages.replaceChildren();const shown=liveChatItems.filter(x=>x.jid===selectedLiveJid);if(!shown.length){const p=document.createElement('p');p.className='note';p.textContent='Contact select karein ya live message ka intezar karein';messages.appendChild(p)}shown.forEach(x=>{const d=document.createElement('div');d.className='bubble '+(x.fromMe?'out':'in');d.textContent=x.text;messages.appendChild(d)});messages.scrollTop=messages.scrollHeight}
+async function sendLiveChatReply(){if(!selectedLiveJid){alert('Pehle contact select karein');return}const input=document.getElementById('liveChatReply'),text=input.value.trim();if(!text)return;try{const r=await fetch('/api/live-chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jid:selectedLiveJid,text})}),d=await r.json();if(!r.ok){alert(d.error||'Message send nahi hua');return}input.value=''}catch(e){alert('Server connection failed')}}
+connectLiveChat();
 </script></body></html>`;
 
 const webSessions=new Map();
@@ -111,6 +120,8 @@ app.get('/api/settings/display-name',requireWebLogin,async(req,res)=>{try{const 
 app.post('/api/settings/display-name',requireWebLogin,async(req,res)=>{try{const session=getWebSession(req);const displayName=String(req.body.displayName||'').trim();if(!displayName||displayName.length>40)return res.status(400).json({error:'Naam 1-40 characters ka hona chahiye.'});await aairaAuth.setDisplayName(session.phone,displayName);currentDashboardOwnerPhone=session.phone;res.json({success:true,message:'Greeting name save ho gaya! 💗'});}catch(e){console.error('Save greeting name error:',e.message);res.status(500).json({error:'Greeting name save nahi hua.'});}});
 app.get('/', (req, res) => res.type('html').send(dashboardHtml));
 
+app.get('/api/live-chat/stream',(req,res)=>{const session=getWebSession(req);if(!session)return res.status(401).end('Login required');const owner=session.phone;res.setHeader('Content-Type','text/event-stream');res.setHeader('Cache-Control','no-cache, no-transform');res.setHeader('Connection','keep-alive');res.flushHeaders?.();const send=(event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');send('snapshot',liveChatBuffers.get(owner)||[]);let listeners=liveChatListeners.get(owner);if(!listeners){listeners=new Set();liveChatListeners.set(owner,listeners)}const listener=item=>send('message',item);listeners.add(listener);const keepAlive=setInterval(()=>res.write(': keep-alive\n\n'),25000);req.on('close',()=>{clearInterval(keepAlive);listeners.delete(listener);if(!listeners.size)liveChatListeners.delete(owner)});});
+app.post('/api/live-chat/send',requireWebLogin,async(req,res)=>{const owner=getWebSession(req).phone,jid=String(req.body.jid||''),text=String(req.body.text||'').trim();if(!/^\d{8,20}@(s\.whatsapp\.net|lid)$/.test(jid))return res.status(400).json({error:'Contact address invalid.'});if(!text||text.length>4000)return res.status(400).json({error:'Message 1-4000 characters ka hona chahiye.'});const socket=accountSockets.get(owner);if(!socket||accountStatus.get(owner)!=='Connected')return res.status(503).json({error:'WhatsApp disconnected.'});try{const sent=await socket.sendMessage(jid,{text});publishLiveChat(owner,{id:sent?.key?.id,jid,text,fromMe:true,timestamp:Date.now()});res.json({success:true})}catch(e){console.error('[LIVE CHAT] Send failed:',e.message);res.status(500).json({error:'Message send failed.'})}});
 app.get('/api/status', requireWebLogin, async (req,res)=>{try{const owner=getWebSession(req).phone;const settings=await aairaAuth.getBotSettings(owner);const connection=accountStatus.get(owner)||'Disconnected';res.json({success:true,connection,botActive:settings.botActive,autoReplyEnabled:settings.autoReplyEnabled,socketReady:!!accountSockets.get(owner)});}catch(e){res.status(500).json({error:'Status load failed'});}});
 app.get('/toggle', requireWebLogin, async(req,res)=>{try{const owner=getWebSession(req).phone;const action=String(req.query.action||'').toLowerCase();if(!['on','off'].includes(action))return res.status(400).json({error:'Invalid action'});const value=action==='on';await aairaAuth.setBotSetting(owner,'botActive',value);res.json({success:true,message:value?'Bot is now ON ✅':'Bot is now OFF ❌',botStatus:value?'ON':'OFF'});}catch(e){console.error('Bot setting error:',e.message);res.status(500).json({error:'Bot setting save failed'});}});
 app.get('/auto-reply', requireWebLogin, async(req,res)=>{try{const owner=getWebSession(req).phone;const action=String(req.query.action||'').toLowerCase();if(!['on','off'].includes(action))return res.status(400).json({error:'Invalid action'});const value=action==='on';await aairaAuth.setBotSetting(owner,'autoReplyEnabled',value);res.json({success:true,message:value?'Auto-reply is now ON ✅':'Auto-reply is now OFF ❌',autoReply:value?'ON':'OFF'});}catch(e){console.error('Auto-reply setting error:',e.message);res.status(500).json({error:'Auto-reply setting save failed'});}});
@@ -153,6 +164,7 @@ async function startAccountBot(ownerPhone){
       if(connection==='open'){accountStatus.set(ownerPhone,'Connected');console.log('[WA] Connected account',ownerPhone);}
       if(connection==='connecting')accountStatus.set(ownerPhone,'Connecting');
       if(connection==='close'){
+        liveChatBuffers.delete(ownerPhone);
         if(accountSockets.get(ownerPhone)!==socket)return;
         accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');const lockTimer=accountLockTimers.get(ownerPhone);if(lockTimer){clearInterval(lockTimer);accountLockTimers.delete(ownerPhone);}
         const statusCode=lastDisconnect?.error?.output?.statusCode;console.log('[WA] Closed account',ownerPhone,statusCode);
@@ -169,7 +181,10 @@ async function startAccountBot(ownerPhone){
     socket.ev.on('messages.upsert',async({messages,type})=>{
       if(type!=='notify')return;
       for(const msg of messages){try{
-        if(!msg.message||msg.key.fromMe)continue;
+        if(!msg.message)continue;
+        const liveJid=msg.key.remoteJid;
+        if(liveJid&&liveJid!=='status@broadcast'&&!liveJid.endsWith('@g.us')){const liveText=(msg.message.conversation||msg.message.extendedTextMessage?.text||msg.message.imageMessage?.caption||msg.message.videoMessage?.caption||'[Media message]').trim();if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()})}
+        if(msg.key.fromMe)continue;
         const sender=msg.key.remoteJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;
         const textMessage=(msg.message.conversation||msg.message.extendedTextMessage?.text||msg.message.imageMessage?.caption||msg.message.videoMessage?.caption||'').trim();
         if(!textMessage)continue;
