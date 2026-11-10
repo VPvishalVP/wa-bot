@@ -8,6 +8,8 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+// Serve the dashboard background image explicitly (the dashboard HTML is inline).
+app.get('/background.jpg',(req,res)=>res.sendFile(require('path').join(__dirname,'background.jpg')));
 
 let sock;
 let isBotActive = true;
