@@ -8,6 +8,11 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+const adminRouter = require('./adminRouter');
+app.use(adminRouter);
+async function rejectBlockedAccount(req,res,next){try{const phone=String(req.body.phone||'').replace(/\\D/g,'');if(phone&&await adminRouter.isBlocked(phone))return res.status(403).json({error:'This AAIRA account has been blocked by admin.'});next();}catch(e){console.error('[ADMIN] Block check failed:',e.message);res.status(503).json({error:'Account access check unavailable.'});}}
+app.use('/api/auth/register',rejectBlockedAccount);
+app.use('/api/auth/login',rejectBlockedAccount);
 // Serve dashboard background assets explicitly (the dashboard HTML is inline).
 app.get('/background.jpg',(req,res)=>res.sendFile(require('path').join(__dirname,'background.jpg')));
 app.get('/anime-bg.jpg',(req,res)=>res.sendFile(require('path').join(__dirname,'anime-bg.jpg')));
