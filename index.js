@@ -226,7 +226,18 @@ async function startAccountBot(ownerPhone){
           await send('*Heyy! 💗 Mai '+greetingName+' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(greetingKey);
         }
-        const contextKey=ownerPhone+':'+sender;\n        const chatHistory=recentChatContexts.get(contextKey)||[];\n        let replyText;\n        try{\n          const aiSettings=await aairaAuth.getAISettings(ownerPhone);\n          if(aiSettings.groqAIEnabled&&aiSettings.savedModelEnabled&&process.env.GROQ_API_KEY){replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});}\n          if(!replyText)replyText=getChatReply(textMessage,{history:chatHistory.slice()});\n        }catch(e){\n          console.error('[GROQ] AI reply failed; using fixed replies:',e.message);\n          try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});}catch(fallbackError){console.error('[WA] Chat reply error:',fallbackError.message);continue;}\n        }\n        chatHistory.push({role:'user',text:textMessage});
+        const contextKey=ownerPhone+':'+sender;
+        const chatHistory=recentChatContexts.get(contextKey)||[];
+        let replyText;
+        try{
+          const aiSettings=await aairaAuth.getAISettings(ownerPhone);
+          if(aiSettings.groqAIEnabled&&aiSettings.savedModelEnabled&&process.env.GROQ_API_KEY){replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});}
+          if(!replyText)replyText=getChatReply(textMessage,{history:chatHistory.slice()});
+        }catch(e){
+          console.error('[GROQ] AI reply failed; using fixed replies:',e.message);
+          try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});}catch(fallbackError){console.error('[WA] Chat reply error:',fallbackError.message);continue;}
+        }
+        chatHistory.push({role:'user',text:textMessage});
         if(replyText)chatHistory.push({role:'assistant',text:replyText});
         if(chatHistory.length>12)chatHistory.splice(0,chatHistory.length-12);
         recentChatContexts.delete(contextKey);recentChatContexts.set(contextKey,chatHistory);
