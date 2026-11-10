@@ -59,6 +59,11 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <body><section id="authGate" style="position:fixed;inset:0;z-index:99;background:#050505;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur 6-64 characters password se login karein ya account banayein.</p><label>Mobile number (country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="919876543210"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button onclick="authAction('login')">LOGIN</button><button onclick="authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section><div class="wrap">
 <header id="mainHeader"><div class="logo">AAIRA ✦</div><div class="subtitle">VIHUHUHU KA OFFLINE ASSISTANT</div><button id="openLiveDashboard" onclick="openLiveDashboard()" style="width:100%;max-width:420px;margin:18px auto;font-size:16px">💬 LIVE WHATSAPP</button></header>
 <section class="panel">
+<div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected</span></div>
+<div class="status"><span>Bot Status</span><span id="bot" class="pill">Checking...</span></div>
+<div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
+</section>
+<section class="panel">
 <div class="row" style="margin-top:15px"><button onclick="toggleBot('on')">BOT ON</button><button onclick="toggleBot('off')">BOT OFF</button></div>
 <div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
 <button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
@@ -73,9 +78,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </section>
 
 <section class="panel">
-<div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected</span></div>
-<div class="status"><span>Bot Status</span><span id="bot" class="pill">Checking...</span></div>
-<div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
+
 <div style="margin-top:15px;border:1px solid #555;border-radius:12px;padding:14px"><h2 style="margin-bottom:8px">📱 CONNECT WHATSAPP</h2><label for="waPhone">WhatsApp number (country code ke saath)</label><input id="waPhone" inputmode="numeric" placeholder="919876543210"><button onclick="connectWhatsApp()" style="width:100%">🔗 CONNECT WHATSAPP</button><div id="pairCode" class="code" style="display:none"></div></div>
 
 </section>
