@@ -188,6 +188,7 @@ async function startAccountBot(ownerPhone){
     });
     socket.ev.on('contacts.upsert',contacts=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||contact.notify||contact.pushName||''});}});
     socket.ev.on('chats.upsert',chats=>{for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||chat.pushName||''});}});
+    socket.ev.on('messaging-history.set',({contacts,chats})=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||contact.notify||contact.pushName||''});}for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||chat.pushName||''});}});
     socket.ev.on('messages.upsert',async({messages,type})=>{
       if(type!=='notify')return;
       for(const msg of messages){try{
