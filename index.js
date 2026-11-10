@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 // Serve dashboard background assets explicitly (the dashboard HTML is inline).
 app.get('/background.jpg',(req,res)=>res.sendFile(require('path').join(__dirname,'background.jpg')));
+app.get('/anime-bg.jpg',(req,res)=>res.sendFile(require('path').join(__dirname,'anime-bg.jpg')));
 app.get('/background.svg',(req,res)=>res.type('image/svg+xml').sendFile(require('path').join(__dirname,'background.svg')));
 
 let sock;
