@@ -31,7 +31,7 @@ const dashboardHtml = `<!DOCTYPE html>
 <style>
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;color:#f4f4f4;font-family:Arial,sans-serif;
-background:linear-gradient(rgba(0,0,0,.30),rgba(0,0,0,.40)),url("/background.svg") center center / cover no-repeat;background-color:#050505}
+background:linear-gradient(rgba(0,0,0,.30),rgba(0,0,0,.40)),url("/anime-bg.jpg") center center / cover no-repeat;background-color:#050505}
 body:before{content:"";position:fixed;inset:0;pointer-events:none;
 background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.045) 50%,transparent 65%)}
 .wrap{width:min(940px,94%);margin:30px auto}
