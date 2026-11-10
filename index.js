@@ -172,7 +172,7 @@ async function startAccountBot(ownerPhone){
     const socket=makeWASocket({... (waVersion?{version:waVersion}:{}),auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,syncFullHistory:false,shouldSyncHistoryMessage:()=>false,browser:['Ubuntu','Chrome','20.0.04']});
     const oldLockTimer=accountLockTimers.get(ownerPhone);if(oldLockTimer)clearInterval(oldLockTimer);
     const lockTimer=setInterval(()=>{aairaAuth.claimWhatsAppSessionLock(ownerPhone,instanceToken,120).then(ok=>{if(!ok){console.error('[WA] Session lock lost for account',ownerPhone);const active=accountSockets.get(ownerPhone);if(active===socket){accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');try{socket.end(undefined);}catch(e){}}}}).catch(e=>console.error('[WA] Session lock renewal failed:',e.message));},45000);accountLockTimers.set(ownerPhone,lockTimer);
-    accountSockets.set(ownerPhone,socket);accountStatus.set(ownerPhone,'Connecting');
+    accountSockets.set(ownerPhone,socket);accountStatus.set(ownerPhone,'Connecting');adminRouter.setWhatsAppStatus(ownerPhone,'Connecting');
     // Persist WhatsApp credentials to Supabase immediately whenever Baileys updates them.
     socket.ev.on('creds.update',async()=>{
       try{
@@ -184,12 +184,12 @@ async function startAccountBot(ownerPhone){
     });
     socket.ev.on('connection.update',async(update)=>{
       const {connection,lastDisconnect}=update;
-      if(connection==='open'){accountStatus.set(ownerPhone,'Connected');console.log('[WA] Connected account',ownerPhone);}
-      if(connection==='connecting')accountStatus.set(ownerPhone,'Connecting');
+      if(connection==='open'){accountStatus.set(ownerPhone,'Connected');adminRouter.setWhatsAppStatus(ownerPhone,'Connected');console.log('[WA] Connected account',ownerPhone);}
+      if(connection==='connecting'){accountStatus.set(ownerPhone,'Connecting');adminRouter.setWhatsAppStatus(ownerPhone,'Connecting');}
       if(connection==='close'){
         liveChatBuffers.delete(ownerPhone);
         if(accountSockets.get(ownerPhone)!==socket)return;
-        accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');const lockTimer=accountLockTimers.get(ownerPhone);if(lockTimer){clearInterval(lockTimer);accountLockTimers.delete(ownerPhone);}
+        accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');adminRouter.setWhatsAppStatus(ownerPhone,'Disconnected');const lockTimer=accountLockTimers.get(ownerPhone);if(lockTimer){clearInterval(lockTimer);accountLockTimers.delete(ownerPhone);}
         const statusCode=lastDisconnect?.error?.output?.statusCode;console.log('[WA] Closed account',ownerPhone,statusCode);
         if(statusCode===DisconnectReason.loggedOut){
           try{await clearAuthState();}catch(e){console.error('[WA] Clear auth failed:',e.message);}
