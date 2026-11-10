@@ -8,6 +8,7 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 const adminRouter = require('./adminRouter');
 app.use(adminRouter);
 async function rejectBlockedAccount(req,res,next){try{const phone=String(req.body.phone||'').replace(/\\D/g,'');if(phone&&await adminRouter.isBlocked(phone))return res.status(403).json({error:'This AAIRA account has been blocked by admin.'});next();}catch(e){console.error('[ADMIN] Block check failed:',e.message);res.status(503).json({error:'Account access check unavailable.'});}}
