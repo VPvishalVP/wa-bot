@@ -72,7 +72,7 @@ async function getBotSettings(phone) {
     autoReplyEnabled: data?.auto_reply_enabled ?? true
   };
 }
-async function setBotSetting(phone, setting, value) {
+async function getAISettings(phone) { const {data,error}=await supabase.from('aaira_account_settings').select('groq_ai_enabled,saved_model_enabled').eq('phone',phone).maybeSingle(); if(error) throw error; return {groqAIEnabled:data?.groq_ai_enabled??true,savedModelEnabled:data?.saved_model_enabled??true}; }\nasync function setBotSetting(phone, setting, value) {
   const column = setting === 'botActive' ? 'bot_active' : 'auto_reply_enabled';
   const { error } = await supabase
     .from('aaira_account_settings')
@@ -122,4 +122,4 @@ async function releaseWhatsAppSessionLock(phone, ownerToken) {
   return callAuthRpc('release_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken });
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones, deleteWhatsAppSession, loadLiveChatBuffer, saveLiveChatBuffer };
+module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, getAISettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones, deleteWhatsAppSession, loadLiveChatBuffer, saveLiveChatBuffer };
