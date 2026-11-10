@@ -30,6 +30,22 @@ async function deleteAccount(phone) {
   return callAuthRpc('aaira_delete_account', { p_phone: phone });
 }
 
+async function loadLiveChatBuffer(phone) {
+  const { data, error } = await supabase.from('sessions').select('data')
+    .eq('session_id', 'account_' + phone).eq('key', 'live_chat_data').maybeSingle();
+  if (error) throw error;
+  let value = data?.data;
+  if (typeof value === 'string') { try { value = JSON.parse(value); } catch { value = []; } }
+  return Array.isArray(value) ? value : [];
+}
+async function saveLiveChatBuffer(phone, items) {
+  const { error } = await supabase.from('sessions').upsert({
+    session_id: 'account_' + phone, key: 'live_chat_data',
+    data: JSON.stringify(Array.isArray(items) ? items : [])
+  }, { onConflict: 'session_id,key' });
+  if (error) throw error;
+}
+
 async function deleteWhatsAppSession(phone) {
   const { error } = await supabase.from('sessions').delete().eq('session_id', 'account_' + phone);
   if (error) throw error;
@@ -106,4 +122,4 @@ async function releaseWhatsAppSessionLock(phone, ownerToken) {
   return callAuthRpc('release_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken });
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones, deleteWhatsAppSession };
+module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones, deleteWhatsAppSession, loadLiveChatBuffer, saveLiveChatBuffer };
