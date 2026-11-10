@@ -220,10 +220,12 @@ async function startAccountBot(ownerPhone){
         if(!settings.botActive||!settings.autoReplyEnabled)continue;
         const send=(text)=>socket.sendMessage(sender,{text});
         const greetingKey=ownerPhone+':'+sender;
-        let greetingName='VIHUHUHU';
-        try{greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim()||'VIHUHUHU';}catch(e){console.warn('[WA] Greeting name lookup:',e.message);}
+        let greetingName=String(msg.pushName||'').trim();
+        const nameMatch=textMessage.match(/(?:mera naam|my name is|i am|i'm)\\s+([a-zA-Z][a-zA-Z0-9_-]{0,39})/i);
+        if(nameMatch)greetingName=nameMatch[1];
+        greetingName=(greetingName||'FRIEND').toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'FRIEND';
         if(!greetedSenders.has(greetingKey)){
-          await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+          await send('*Heyy! 💗 Mai '+greetingName+' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(greetingKey);
         }
         const contextKey=ownerPhone+':'+sender;
