@@ -142,8 +142,15 @@ async function startAccountBot(ownerPhone){
   if(accountStarting.has(ownerPhone))return accountStarting.get(ownerPhone);
   if(accountSockets.has(ownerPhone))return accountSockets.get(ownerPhone);
   const promise=(async()=>{
-    const lock=await aairaAuth.claimWhatsAppSessionLock(ownerPhone,instanceToken,120);
-    if(lock!==true && lock!=='claimed' && lock?.claimed!==true)throw new Error('WhatsApp account session is active on another server instance');
+    let lock=false;
+    // During Render deploy overlap, the previous instance's lease may still be valid.
+    // Wait for that lease to expire rather than marking the WhatsApp session disconnected permanently.
+    for(let lockAttempt=0;lockAttempt<6;lockAttempt++){
+      lock=await aairaAuth.claimWhatsAppSessionLock(ownerPhone,instanceToken,120);
+      if(lock===true || lock==='claimed' || lock?.claimed===true)break;
+      if(lockAttempt<5)await new Promise(resolve=>setTimeout(resolve,25000));
+    }
+    if(lock!==true && lock!=='claimed' && lock?.claimed!==true)throw new Error('WhatsApp account session lock is held by another live instance; retry after lease expires');
     const {state,saveCreds,clearAuthState}=await useSupabaseAuthState('account_'+ownerPhone);
     let waVersion;try{const live=await fetchLatestWaWebVersion();if(Array.isArray(live?.version)&&live.version.length===3)waVersion=live.version;}catch(e){console.warn('[WA] Version lookup:',e.message);}
     const socket=makeWASocket({... (waVersion?{version:waVersion}:{}),auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,browser:['Ubuntu','Chrome','20.0.04']});
