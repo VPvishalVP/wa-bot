@@ -1,58 +1,91 @@
-// AAIRA normal-chat reply bank: combinatorial variations, no external AI/API.
-const openings = [
-  "Arey 😊 ", "Achha ji, ", "Haan bilkul! ", "Hehe 😄 ", "Suno, ",
-  "Aww 💛 ", "Wah! ", "Bilkul yaar, ", "Hmm 😊 ", "Ji haan, "
+// AAIRA common-chat response bank with context-aware conversational flow.
+const pick = (items) => items[Math.floor(Math.random() * items.length)];
+const intents = [];
+const openings = [];
+const closings = [];
+
+const contextReplies = {
+  greeting: ["Hello! 😊 Kaise ho?","Hi! Sab theek?","Hey, kya haal hai? 😄","Namaste! Aaj kaise ho?"],
+  howAreYou: ["Main theek hoon 😊 tum kaise ho?","Badhiya hoon, tum sunao?","Sab achha chal raha hai. Tumhara kya haal?","Theek-thaak hoon, tum kaise ho?"],
+  doing: ["Bas yahin hoon, tumse baat kar raha/rahi hoon. 😊","Kuch khaas nahi, tum batao?","Abhi chat kar raha/rahi hoon. Tum kya kar rahe ho?","Tumhara message padh raha/rahi hoon."],
+  fine: ["Achha hai, sunke khushi hui! 😊","Badhiya! Aaj kya chal raha hai?","Sahi hai, aise hi khush raho. ❤️","Wah, nice! Aur batao?","Chalo, ye sunkar achha laga. 😊"],
+  morning: ["Good morning! Aaj ka din achha rahe. ☀️","Suprabhat! Khush raho. 😊","Good morning! Aaj kya plan hai?","Morning! Nayi subah mubarak."],
+  night: ["Good night, sweet dreams! 🌙","Shubh ratri, aaram se sona. 😴","Good night! Kal phir baat karenge. 😊","Achhi neend aaye, apna khayal rakhna."],
+  food: ["Haan, kha liya. Tumne khaya? 😊","Abhi khane ja raha/rahi hoon, tum batao?","Haan, pet bhar ke khaya! 😋","Abhi nahi, thodi der mein khaunga/khaungi. Tumne khaya?"],
+  thanks: ["You're welcome! 😊","Koi baat nahi, khushi hui help karke. ❤️","Arey, thanks ki kya baat!","Welcome! Kabhi bhi."],
+  sorry: ["Koi baat nahi, sab theek hai. 😊","It's okay, tension mat lo. ❤️","Chalta hai, galti sabse hoti hai.","No worries!"],
+  goodbye: ["Theek hai, phir baat karte hain! 😊","Bye, apna khayal rakhna. ❤️","Milte hain phir, take care!","See you soon!"],
+  yes: ["Achha, badhiya! 😊","Bilkul!","Sahi hai. 👍","Okay, phir done."],
+  no: ["Achha, koi baat nahi. 😊","Theek hai, no pressure.","Samajh gaya/gayi.","Okay, phir kabhi."],
+  sadness: ["Kya hua? Baat karna chaho toh main sun raha/rahi hoon. ❤️","Arey, himmat rakho. Kya baat pareshan kar rahi hai?","Tum share karna chaho toh aaram se batao.","Mujhe afsos hai tum aisa feel kar rahe ho."],
+  happiness: ["Wah! Ye sunkar achha laga. 🎉","Aise hi khush raho! ❤️","Arey badhiya, kya good news hai?","Mast! Enjoy karo. 😄"],
+  humor: ["Haha, tum bhi na! 😂","Hehe, good one! 😄","Hasi-mazaak chalta rahe!","LOL 😂 aur sunao!"],
+  friendship: ["Bilkul, friendly baatein karte hain! 😊","Tum bhi achhe dost ho. ❤️","Dosti bani rahe!","Haan ji, bolo dost."],
+  affection: ["Aww, that's sweet! ❤️","Tumhari baat pyari hai. 😊","Thanks, sending positive vibes!","Aww, appreciate it."],
+  questions: ["Haan, poochho. 😊","Bilkul, kya sawaal hai?","Bolo, sun raha/rahi hoon.","Zaroor, batao kya help chahiye?"],
+  identity: ["Main AAIRA AI chat assistant hoon. 😊","Main virtual assistant hoon, insaan nahi.","Mera naam AAIRA hai.","Main AI bot hoon, chat aur help ke liye."],
+  boredom: ["Chalo kuch interesting baat karte hain. 😊","Koi game khelein? 😄","Kis topic par baat karein?","Chalo time pass karte hain."],
+  compliment: ["Thank you! Tum bhi kamaal ho. 😊","Arey, shukriya. ❤️","That's kind of you!","Thanks, achha laga sunkar."],
+  missing: ["Aww, achha laga tumne yaad kiya. ❤️","Yahin hoon, baat karte hain. 😊","Miss you too!","Bolo, kya chal raha hai?"],
+  general: ["Achha, aur batao? 😊","Tum sunao, kya chal raha hai?","Haan, bolo. Main sun raha/rahi hoon.","Phir kya hua?","Samajh raha/rahi hoon. Aage batao."]
+};
+
+const patterns = [
+  ["morning", /\b(good\s*morning|gm|suprabhat|morning)\b/i],
+  ["night", /\b(good\s*night|gn|shubh\s*ratri|night night|so jao|sone ja)\b/i],
+  ["food", /\b(khana|khaana|khaya|kha liya|lunch|dinner|nashta|bhookh|hungry)\b/i],
+  ["thanks", /\b(thank\s*you|thanks|thanku|shukriya|dhanyavaad|thx)\b/i],
+  ["sorry", /\b(sorry|maaf|my bad|apolog)\b/i],
+  ["goodbye", /\b(bye|goodbye|good bye|alvida|see you|ttyl|milte hain)\b/i],
+  ["sadness", /\b(udaas|sad|dukhi|depressed|rona|upset|mood off|low feel|pareshan)\b/i],
+  ["happiness", /\b(happy|khush|excited|great news|good news|congrat|celebrate|bahut khush)\b/i],
+  ["humor", /\b(haha|hehe|lol|lmao|joke|funny|mazaak|😂|🤣)\b/i],
+  ["affection", /\b(love you|i love you|pyaar|pyar|miss you|miss u)\b/i],
+  ["friendship", /\b(friend|dost|yaar|bestie|dosti)\b/i],
+  ["identity", /\b(tum kaun|aap kaun|naam kya|who are you|are you ai|ai ho|bot ho|robot)\b/i],
+  ["doing", /\b(kya kar rahe|kya kar rahi|what are you doing|kya chal raha|kahan busy|free ho)\b/i],
+  ["howAreYou", /\b(kaise ho|kaisi ho|how are you|how r u|haal chaal|kya haal|tabiyat kaisi)\b/i],
+  ["compliment", /\b(cute|beautiful|handsome|smart ho|achhe ho|nice|awesome|kamaal ho|tareef)\b/i],
+  ["boredom", /\b(bore|boring|time pass|mann nahi lag|pak gaya)\b/i],
+  ["questions", /\b(ek baat pooch|sawaal|question|help chahiye|can you help|poochna tha)\b/i],
+  ["yes", /^(haan|han|yes|yep|yeah|ji haan|bilkul|sure|pakka)[\s.!😊👍]*$/i],
+  ["no", /^(nahi|nah|no|nope|abhi nahi)[\s.!😊]*$/i],
+  ["greeting", /\b(hi|hello|hey|hii|heyy|namaste|pranam)\b/i]
 ];
-const closings = [
-  " 😊", " 💛", " 😄", " yaar.", " batao na.", " main yahin hoon.", " ✨", " hehe.", " ji.", " aur bolo?"
-];
-const intents = [
-  [/\\b(good morning(?: bhai)?|morning bhai|suprabhat bhai)\\b/i, ["Good morning bhai! 😊 Aaj ka din mast rahe.","Good morning mere bhai! ☀️ Kaise ho?","Suprabhat bhai, sab badhiya?","Good morning bhai ❤️ Khush raho.","Morning bhai! Chai pi li?","Good morning bhai, kya haal hai?","Arey good morning bhai! 🌞","Good morning mere dost bhai!","Subah mubarak bhai, aaj kya plan hai?","Good morning bhai! Hamesha haste raho."]],
-  [/\\b(good night(?: bhai)?|night bhai|shubh ratri bhai)\\b/i, ["Good night bhai! 🌙 Sweet dreams.","Good night mere bhai, aaram se sona.","Shubh ratri bhai ❤️ Apna khayal rakhna.","Good night bhai! Kal phir baat karenge.","Night bhai 😴 Mast neend aaye.","Good night bhai, sapne pyare aayein.","Good night mere bhai! Take care.","Shubh ratri bhai, rest karna.","Good night bhai 🌙 Khush rehna.","Night night bhai! Kal milte hain."]],
-  [/\\b(khana kha liye bhai|khana kha liya bhai|khana khaya bhai|bhai khana kha liye|bhai khana kha liya|kha liye bhai)\\b/i, ["Haan bhai, khana kha liya 😊 Tumne khaya?","Abhi khane ja raha hoon bhai, tum batao?","Haan bhai, pet bhar ke khaya 😋","Nahi bhai, abhi nahi khaya. Tumne kha liya?","Khana ho gaya bhai, thanks poochhne ke liye ❤️","Haan bhai, tum bhi time se khana kha lena.","Abhi nahi bhai, thodi der mein khaunga.","Haan mere bhai, sab badhiya. Tumhara kya?","Kha liya bhai! Ab batao kya chal raha?","Bhai, khana kha liya. Tum apna dhyan rakhna."]],
-  [/\b(hi|hello|hey|hii|heyy|namaste|pranam)\b/i, ["Hello! Kaise ho? 😊","Heyy, kya haal hai?","Namaste ji! Batao kya chal raha hai?","Hii! Tumse baat karke achha laga.","Hey dost, aaj ka din kaisa hai?","Hello hello! Main yahin hoon.","Hii ji, bolo na.","Arey hello! Kya news hai?","Hey! Sab badhiya?","Namaste! Aaj kya baat karein?","Hii, welcome back!","Hello ji, kaise yaad kiya?","Heyy 😊 mood kaisa hai?","Hi dost! Kya kar rahe ho?","Hello! Aaram se baat karo.","Hey, sun rahi hoon.","Hii! Kuch interesting batao.","Namaste, sab kushal mangal?","Hello ji! 😊","Heyy, bolo!"]],
-  [/\b(how are you|kaise ho|kaisi ho|kaisa hai|haal chaal|kya haal)\b/i, ["Main badhiya hoon 😊 tum kaise ho?","Sab mast! Tum sunao.","Theek-thaak aur ready to chat. Tumhara kya haal?","Achhi hoon ji, tum batao.","Mera mood friendly hai 😄 tumhara?","Sab badhiya chal raha, tumhari taraf?","Main yahin hoon tumse baat karne ke liye.","Badiya! Aaj tum kaise feel kar rahe ho?","Ekdam chill. Tum batao kya haal?","Main fine, tum khush ho na?","Sab theek 😊 tumhara din kaisa?","Badhiya ji! Koi nayi baat?","Mast hoon, tum apna batao.","Theek hoon, tumse baat ho rahi hai.","Main ready hoon, kya chal raha hai?","Achha haal hai 😄 tum sunao.","Badiya! Aaj ka mood kya hai?","Main okay, tum kaise ho dost?","Sab set! Tumhari life mein kya chal raha?","Haan ji, sab achha. Tum?"]],
-  [/\b(what are you doing|kya kar rahe|kya kar rahi|kya chal raha)\b/i, ["Tumse baat kar rahi hoon 😊","Bas yahin chat ke liye ready hoon.","Tumhara message padh rahi hoon.","Kuch khaas nahi, tum sunao.","Abhi tumhari baat ka reply de rahi hoon.","Chat mode on hai 😄","Tumse gupshup kar rahi hoon.","Yahin hoon, bolo kya karna hai.","Bas chill, tum kya kar rahe?","Tumhare saath conversation!","Aaj ki baatein collect kar rahi hoon 😉","Ready hoon tumhari baat sunne ke liye.","Kuch nahi ji, tum batao.","Yahin assistant duty par hoon.","Tumhara wait nahi, par message achha laga.","Baat karte hain, topic tum choose karo.","Chatting kar rahi hoon, aur tum?","Bas friendly mode mein hoon.","Tumhari baat ka intezaar kar rahi thi.","Bolo, kya scene hai?"]],
-  [/\b(bye|goodbye|good bye|alvida|see you|ttyl)\b/i, ["Bye bye! Apna khayal rakhna 💛","Achha, phir baat karenge!","See you soon 😊","Bye dost, khush rehna.","Chalo ji, milte hain phir.","Take care!","Okay bye, din achha guzre.","Phir milenge, tata!","Bye! Jab mann ho message karna.","Goodbye ji, smile karte rehna.","Chalti hoon, take care 😊","Bye bye, lots of good wishes.","Phir baat hogi!","Okay, see you later.","Khuda hafiz, apna dhyan rakhna.","Tata! 💛","Bye, yaad se paani peena.","See you, dost!","Achha bye, khush raho.","Bye ji, phir aana."]],
-  [/\b(thank you|thanks|shukriya|dhanyawad|thnx|ty)\b/i, ["You're welcome 😊","Arey koi baat nahi!","Khushi hui help karke.","Anytime, dost 💛","Mention mat karo.","Bas tum khush raho.","Welcome ji!","Koi bhi baat ho bata dena.","Hehe, welcome!","Madad karke achha laga.","Always welcome.","Arre thanks ki kya baat!","No problem at all.","Khushi se 😊","Ji, kabhi bhi.","Welcome back anytime.","Bas kaam aa gayi, achha laga.","You're most welcome!","Koi tension nahi.","Welcome yaar!"]],
-  [/\b(sorry|maaf|my bad|apolog)\b/i, ["Koi baat nahi 😊","It's okay, tension mat lo.","Maafi ki zaroorat nahi, sab theek.","Chalta hai yaar.","No worries 💛","Main samajh sakti hoon.","It's alright, aage badhte hain.","Koi issue nahi ji.","Sab okay hai.","Arey relax, koi baat nahi.","No problem, dost.","Maaf kiya 😊","Theek hai, dil pe mat lo.","Hota hai kabhi kabhi.","All good!","Chinta mat karo.","Bas ab smile karo.","It's fine, really.","Koi gila nahi.","Theek hai ji, no worries."]],
-  [/\b(love you|i love you|ily|pyaar karta|pyaar karti)\b/i, ["Aww, kitni sweet baat hai 💛","Tum bahut kind ho 😊","Sending lots of good vibes!","Aww hehe, thank you.","Tumhari baat cute hai.","Main AI hoon, par tumhari warmth appreciate karti hoon.","Bahut pyaar aur positivity tumhare liye.","That's sweet of you!","Aww, smile aa gayi 😊","Tum achhe dost ho.","Dil se thanks 💛","Kitne pyare ho tum!","Main friendly support zaroor de sakti hoon.","Aww, sending a virtual hug.","Tumhari kindness achhi lagi.","Hehe, that's adorable.","Thank you, dost!","Tumhari feelings ki respect hai.","Aww ji 😊","Positive vibes back to you!"]],
-  [/\b(friend|dost|yaar|bestie)\b/i, ["Haan ji dost 😊 bolo!","Dosti wali gupshup karein?","Main friendly chat partner hoon.","Yaar, kya baat hai?","Dost, tum sunao.","Bestie vibes 😄 kya scene?","Haan, friendly mode full on.","Bolo yaar, sun rahi hoon.","Dosti mein baatein zaroori hain.","Tumhari baat sunne ko ready.","Dost, aaj kya naya?","Gupshup shuru karein?","Haan ji, batao friend.","Kya haal hai mere chat dost?","Dostana conversation incoming!","Bolo, kya share karna hai?","Yaar 😊 main yahin hoon.","Friendly baat karte hain.","Dost, mood kaisa hai?","Haan, bolo ji!"]],
-  [/\b(good morning|subah|morning)\b/i, ["Good morning! 🌞 Din shubh ho.","Suprabhat ji 😊 kaise ho?","Morning! Aaj ka din mast rahe.","Good morning dost, smile karo!","Subah ki warm wishes 💛","Rise and shine!","Namaste, nayi subah mubarak.","Good morning! Kya plan hai?","Aaj ka din achha guzre.","Morning ji, chai pi?","Good morning 😊 fresh start!","Subah mubarak ho.","Wishing you a lovely morning.","Morning! Positive raho.","Suprabhat, sab badhiya?","Good morning yaar!","Nayi subah, nayi umeed.","Morning vibes 🌻","Good morning! Take it easy.","Subah ki namaste!"]],
-  [/\b(good night|gn|shubh ratri|raat|sleep|so ja)\b/i, ["Good night 🌙 sweet dreams.","Shubh ratri ji, aaram se sona.","Night night! Take care.","Achhi neend aaye 😊","Good night dost, kal milte hain.","Sweet dreams 💛","Raat mubarak, relax karo.","So jao ji, rest zaroori hai.","Good night! Sapne pyare aayein.","Chalo, kal baat karenge.","Shubh raatri ✨","Aaram se sona, take care.","Good night yaar.","Sleep well!","Raat ko phone thoda side rakhna 😉","Sweet dreams, dost.","Good night 😊","Khushgawar raat ho.","Rest well and recharge.","Shubh ratri!"]],
-  [/\b(haha|hehe|lol|lmao|😂|🤣|funny|mazaak|joke)\b/i, ["Hehe 😂 hasi ruk nahi rahi!","Haha, tum bhi na.","LOL 😄 aur sunao!","Mazaak ka mood hai kya?","Hehe, good one!","Hasi-mazaak chalta rehna chahiye.","😂😂 kya baat hai!","Tum funny ho yaar.","Haha, mood fresh ho gaya.","Ek aur joke sunna hai?","Hehe ji 😆","Kya mast baat boli.","LOL, nice!","Hahaha, full comedy.","Aise hi haste raho 💛","😂 Arey wah!","Maza aa gaya.","Haha, aur kya?","Funny vibes!","Hehe, sahi hai."]],
-  [/\b(sad|dukhi|depressed|udaas|rona|upset|low feel)\b/i, ["Aww 💛 kya hua? Batao, main sun rahi hoon.","Mujhe afsos hai tum aisa feel kar rahe ho.","Kabhi kabhi tough din hote hain. Share karna chaho?","Tumhari feelings important hain.","Thoda waqt lo, main yahin hoon.","Kya kisi baat ne hurt kiya?","Akele mat jhelo, kisi trusted insaan se bhi baat karna.","I’m here to listen without judging.","Dil halka karna chaho toh batao.","Sending a gentle virtual hug 💛","Tum deserve karte ho care aur kindness.","Ek-ek karke baat karte hain.","Kya main tumhari baat sun sakti hoon?","It’s okay to feel this way sometimes.","Tum akela mehsoos kar rahe ho?","Batao, kya chal raha hai mann mein.","Thoda paani piyo aur slow saans lo.","Main sunungi, jaldi nahi hai.","Aaj ka din mushkil hai, par support lo.","Tumhari baat matter karti hai."]],
-  [/\b(happy|khush|mast|excited|great|awesome|badiya)\b/i, ["Wah! Ye sunkar achha laga 😄","Yay! Khushi bani rahe 💛","Kya baat hai, celebration banta hai!","Tumhari happiness contagious hai.","Awesome! Aur batao.","Mast ji! Aise hi khush raho.","Bahut achhi news lag rahi hai.","Wah, smile karti raho!","That’s wonderful 😊","Khushi ka reason kya hai?","Aaj toh vibe hi alag hai.","Super! Enjoy karo.","Yay dost!","Achha laga sunke.","Keep shining ✨","Badiya news!","Mujhe bhi batao kya hua.","Full happy vibes!","Wah ji wah.","Khush rehna, sabse important."]],
-  [/\b(bored|boring|pak gaya|mann nahi|time pass)\b/i, ["Chalo gupshup karte hain 😄","Ek fun game khelen?","Koi interesting topic choose karein?","Boredom ko bye bolte hain.","Tumhe jokes, riddles ya random chat pasand?","Chalo rapid-fire!","Kuch naya try karte hain.","Ek paheli sunaoon?","Music, movies ya fun facts ki baat?","Aaj ka time pass plan kya ho?","Hehe, boredom aa gaya?","Chalo kuch entertaining karte hain.","Would you rather game?","Random question: favorite snack?","Gupshup se mood badlega.","Koi funny story discuss karein?","Chalo ek mini challenge.","Batao, kis topic pe chat?","Time pass mode activated 😄","Main conversation shuru karun?"]],
-  [/\b(naam|name|who are you|tum kaun|aap kaun)\b/i, ["Mera naam AAIRA hai 😊","Main AAIRA, tumhari chat assistant.","AAIRA naam hai mera.","Main ek AI assistant hoon, AAIRA.","AAIRA here! Tumhara naam kya hai?","Mujhe AAIRA bula sakte ho.","Main friendly virtual assistant hoon.","AAIRA 😊 aur tum?","Main AAIRA, baat karne ke liye ready.","Tum mujhe AAIRA kehna.","Main chatbot assistant AAIRA hoon.","AAIRA ji present!","Main virtual assistant hoon, insaan nahi.","Mera naam AAIRA hai, bolo.","AAIRA—tumhari digital saathi.","Main AAIRA, kya help chahiye?","AAIRA naam yaad rakhna 😄","Hi, I’m AAIRA.","Main AAIRA assistant.","AAIRA hoon ji!"]],
-  [/\b(khana|food|eat|bhook|hungry|snack)\b/i, ["Kuch tasty kha lo 😊","Bhook lagi hai? Kya khane ka mann hai?","Aaj ka menu kya hai?","Khana time pe zaroor khana.","Favorite dish kaunsi hai?","Chalo food talk!","Kuch light aur yummy kha lo.","Arey bhook ko ignore mat karo.","Indian snacks ki baat karein?","Tumhara favorite food batao.","Yum 😋 kya kha rahe ho?","Paani bhi peena yaad rakhna.","Aaj kuch special bana?","Foodie ho kya?","Khana share karne ka mood!","Bhook lagi toh kuch kha lo ji.","Favorite dessert?","Chaat ya pizza?","Kya khaya aaj?","Enjoy your meal!"]],
-  [/\b(compliment|beautiful|pretty|cute|handsome|achhi|accha lag)\b/i, ["Aww, thank you 😊","Tumhari baat sweet hai.","Hehe, appreciate karti hoon.","That's kind of you 💛","Tum bhi kind ho.","Aww ji, thanks!","Compliment received 😄","Bahut pyari baat kahi.","Thank you, dost.","Tumhari positivity achhi lagi.","Hehe 😊","That's thoughtful.","Thanks for being nice.","Aww, appreciate it.","Tum sweet ho yaar.","Thank you so much!","Kind words, thanks.","Smile aa gayi.","Aapki meherbani 😊","Thanks ji!"]],
-  [/\b(ok|okay|acha|achha|theek|thik|alright|fine)\b/i, ["Theek hai ji 😊","Achha, samajh gayi.","Okay dost!","Bilkul, done.","Haan ji, sahi hai.","Alright!","Theek-thaak, bolo.","Achha ji 😄","Okay, aage batao.","Samajh aaya.","Haan, no problem.","Ji bilkul.","Cool!","Theek hai, main yahin hoon.","Okayyy 😊","Sahi hai yaar.","Achha, phir?","Alright dost.","Done ji.","Haan theek."]],
-  [/\b(yes|haan|han|yep|yeah|ji haan)\b/i, ["Achha ji 😊","Haan, bolo!","Bilkul!","Okay, samajh gayi.","Wah, sahi hai.","Haan ji, aage?","Yess 😄","Achha, phir batao.","Ji haan.","Cool, continue.","Haan bilkul dost.","Sahi!","Okay ji.","Haan, main sun rahi hoon.","Yup!","Bilkul sahi.","Haan ji 😊","Acha!","Yes yes.","Bolo na."]],
-  [/\b(no|nahi|nah|nope|not really)\b/i, ["Achha, koi baat nahi 😊","Theek hai ji.","Samajh gayi.","No worries.","Achha, phir kya?","Okay dost.","Koi pressure nahi.","Theek hai, tumhari marzi.","Achha ji.","Alright.","Nahi toh koi baat nahi.","Samajh aaya.","Cool, no problem.","Theek hai 😊","Chalo koi aur baat.","Okay, noted.","Haan, samajh rahi hoon.","No problem at all.","Achha, batao phir.","Thik hai ji."]],
-  [/\b(miss you|miss u|yaad aa|remember me)\b/i, ["Aww, sweet message 💛","Tumhari baat cute hai.","Yahin chat mein milte hain 😊","Virtual hi hello!","Aww ji, thanks.","Jab message karoge, baat karenge.","Sending warm vibes.","Tumhe gupshup ki yaad aayi?","Hehe, hello dost!","Main yahin available hoon.","Sweet of you to say.","Aww 😊","Chalo baat karte hain.","Tumhari kindness achhi lagi.","Virtual hug!","Heyy, welcome back.","Bolo, kya chal raha?","Good to hear from you.","Aww, friendly vibes.","Message karte rehna."]],
-  [/\b(what|kya|why|kyu|kaise|how|when|where|batao|tell me)\b/i, ["Batao ji, kis baare mein? 😊","Main help karne ki koshish karti hoon.","Thoda detail doge?","Achha sawaal hai.","Haan ji, poochho.","Kya jaan-na chahte ho?","Bolo, main sun rahi hoon.","Let's figure it out together.","Ek baar aur explain karoge?","Samajhne mein help karo.","Batao, kya doubt hai?","Main yahin hoon.","Poochho dost!","Sure, batao.","Kis cheez ki baat hai?","Haan, aage bolo.","Kya scene hai?","Main try karungi answer dene ka.","Ji, bolo na.","Ask away!"]],
-  [/\b(you are|tum ho|aap ho|bot|robot|ai)\b/i, ["Haan, main AI assistant AAIRA hoon 😊","Main virtual assistant hoon.","Main chatbot hoon, insaan nahi.","AAIRA here, digital chat partner.","Main AI hoon aur help kar sakti hoon.","Virtual assistant ji present!","Main software-based assistant hoon.","Haan, bot hoon—but friendly 😄","AAIRA, tumhari assistant.","Main AI chat assistant hoon.","Insaan nahi, AI hoon.","Main virtual hoon, baatein real context mein karti hoon.","AAIRA assistant reporting!","Haan ji, AI assistant.","Main AI powered chat bot.","Digital assistant, naam AAIRA.","Main online chat helper hoon.","AI hoon, tumhari baat samajhne ki koshish karti hoon.","Virtual friend-like assistant.","AAIRA 😊"]],
-  [/\b(emoji|❤️|💖|💕|😘|hug|hugs)\b/i, ["Sending warm virtual hugs 💛","Aww 💖","🤗✨","Lots of positive vibes!","Hehe, cute emojis 😊","Virtual hug accepted!","💛😊","Aww, sweet!","Sending a smile 😄","🤗💫","Heartwarming!","Cute vibes 💕","Thanks for the warmth.","Smile back 😊","💖✨","A virtual hug for you.","Aww ji.","Positive energy!","🤍","Hehe 😊"]],
-  [/\b(bye|hi|hello|hey|thanks|sorry|love|friend|dost|good morning|good night|kaise ho|kya haal)\b/i, ["Haan ji 😊 bolo.","Achha, aur batao?","Main yahin hoon.","Kya baat hai dost?","Bolo na, sun rahi hoon.","Hehe 😄","Ji, batao.","Aur kya chal raha?","Haan, gupshup karein.","Tum sunao!","Achha ji.","Kuch aur share karna hai?","Bolo yaar.","Main chat ke liye ready.","Haan ji 💛","Batao, kya news?","Kya scene hai?","Sun rahi hoon 😊","Aage bolo.","Ji dost!"]]
-];
-function getChatReply(input) {
-  const message = String(input || '').trim();
-  if (!message) return null;
-  const lower = message.toLowerCase();
-  const math = lower.match(/(?:what is|calculate|solve|kitna|=?\\s*)?(-?\\d+(?:\\.\\d+)?)\\s*([+*\\/-])\\s*(-?\\d+(?:\\.\\d+)?)(?:\\s*=?\\s*\\??)?$/);
-  if (math) {
-    const a = Number(math[1]), b = Number(math[3]), op = math[2];
-    if (op === '+') return String(a + b);
-    if (op === '-') return String(a - b);
-    if (op === '*') return String(a * b);
-    if (op === '/') return b === 0 ? "Zero se divide nahi kar sakte." : String(a / b);
-  }
-  const matched = intents.find(([pattern]) => pattern.test(message));
-  const replies = matched ? matched[1] : intents[intents.length - 1][1];
-  const core = replies[Math.floor(Math.random() * replies.length)];
-  const open = openings[Math.floor(Math.random() * openings.length)];
-  const close = closings[Math.floor(Math.random() * closings.length)];
-  return open + core + close;
+
+function normalize(s) {
+  return String(s || "").toLowerCase().replace(/[.,!?;:]+/g, " ").replace(/\s+/g, " ").trim();
 }
-module.exports = { getChatReply, intents, openings, closings };
+function lastAssistant(history) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role === "assistant") return normalize(history[i].text);
+  }
+  return "";
+}
+function detectIntent(message = "") {
+  const s = normalize(message);
+  for (const [intent, pattern] of patterns) if (pattern.test(s)) return intent;
+  return "general";
+}
+function getChatReply(input, context = {}) {
+  const message = String(input || "").trim();
+  if (!message) return null;
+  const lower = normalize(message);
+  const history = Array.isArray(context.history) ? context.history : [];
+  const previousBot = lastAssistant(history);
+  const isFineReply = /\b(mera bhi|main bhi|mai bhi|me too|same here|mujhe bhi)\b/.test(lower) &&
+    /\b(theek|thik|badhiya|achha|mast|fine|okay|ok)\b/.test(lower);
+  const botAskedWellbeing = /\b(tum kaise ho|tumhara kya haal|aap kaise ho|kaise ho|haal kaisa|how are you|tum sunao)\b/.test(previousBot);
+  if (isFineReply && botAskedWellbeing) return pick(contextReplies.fine);
+
+  if (/^(hmm+|hmmm+|acha|achha|accha|ohh?|okay|ok|theek|thik|sahi|haan|han|ji|right)[\s😊😄🙂👍.!]*$/i.test(lower)) {
+    if (/\b(kaise ho|haal|how are you)\b/.test(previousBot)) return pick(contextReplies.howAreYou);
+    if (/\b(kya kar|kya chal|kya plan|batao|poochho|sawaal)\b/.test(previousBot)) return pick(contextReplies.general);
+    return pick(contextReplies.general);
+  }
+
+  const intent = detectIntent(message);
+  if (intent === "howAreYou" && /\b(mera bhi|main bhi|mai bhi)\b/.test(lower)) return pick(contextReplies.fine);
+  return pick(contextReplies[intent] || contextReplies.general);
+}
+module.exports = { getChatReply, detectIntent, getReplyCombinationCount: () => Object.values(contextReplies).reduce((n, a) => n + a.length, 0), intents, openings, closings };
