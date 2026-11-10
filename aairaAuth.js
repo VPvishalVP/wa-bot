@@ -72,7 +72,8 @@ async function getBotSettings(phone) {
     autoReplyEnabled: data?.auto_reply_enabled ?? true
   };
 }
-async function getAISettings(phone) { const {data,error}=await supabase.from('aaira_account_settings').select('groq_ai_enabled,saved_model_enabled').eq('phone',phone).maybeSingle(); if(error) throw error; return {groqAIEnabled:data?.groq_ai_enabled??true,savedModelEnabled:data?.saved_model_enabled??true}; }\nasync function setBotSetting(phone, setting, value) {
+async function getAISettings(phone) { const {data,error}=await supabase.from('aaira_account_settings').select('groq_ai_enabled,saved_model_enabled').eq('phone',phone).maybeSingle(); if(error) throw error; return {groqAIEnabled:data?.groq_ai_enabled??true,savedModelEnabled:data?.saved_model_enabled??true}; }
+async function setBotSetting(phone, setting, value) {
   const column = setting === 'botActive' ? 'bot_active' : 'auto_reply_enabled';
   const { error } = await supabase
     .from('aaira_account_settings')
