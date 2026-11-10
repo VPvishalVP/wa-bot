@@ -66,7 +66,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
 <button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
 </section>
-<section class="panel" id="liveChatPanel" style="display:none"><button onclick="backToMainDashboard()" style="width:100%;margin:0 0 12px">← BACK</button><h2>💬 LIVE WHATSAPP CHAT</h2><p id="liveChatStatus" class="note">Login ke baad live chat connect hoga. Messages permanently save nahi hote.</p><div class="chat-layout"><div id="liveChatContacts" class="chat-contacts"><p class="note">Live contacts yahan aayenge</p></div><div id="liveChatMessages" class="chat-messages"><p class="note">Koi live message nahi hai.</p></div></div><div class="chat-compose"><input id="liveChatReply" placeholder="Reply likhein..." maxlength="4000"><button onclick="sendLiveChatReply()">SEND</button></div></section>
+<section class="panel" id="liveChatPanel" style="display:none"><button onclick="backToMainDashboard()" style="width:100%;margin:0 0 12px">← BACK</button><h2>💬 LIVE WHATSAPP CHAT</h2><div style="border:1px solid #777;border-radius:12px;padding:12px;margin-bottom:12px"><h2>🔗 CONNECT WHATSAPP</h2><p class="note">WhatsApp connect nahi hai? Pairing code banayein aur WhatsApp app mein Link a device karein.</p><label for="livePhone">WhatsApp number (country code ke saath)</label><input id="livePhone" inputmode="numeric" placeholder="919876543210"><button onclick="getLivePairCode()" style="width:100%">CONNECT / GENERATE CODE</button><div id="livePairCode" class="code">----</div><p class="note">WhatsApp app → ⋮ Settings → Linked devices → Link a device → Link with phone number. Yahan generated code enter karein. Dashboard registered number same hona chahiye.</p></div><p id="liveChatStatus" class="note">Live chat connection status check ho raha hai… Chats RAM mein temporarily rehte hain, permanent history nahi.</p><div class="chat-layout"><div id="liveChatContacts" class="chat-contacts"><p class="note">Live contacts yahan aayenge</p></div><div id="liveChatMessages" class="chat-messages"><p class="note">Koi live message nahi hai.</p></div></div><div class="chat-compose"><input id="liveChatReply" placeholder="Reply likhein..." maxlength="4000"><button onclick="sendLiveChatReply()">SEND</button></div></section>
 <section class="panel">
 <h2>💗 GREETING NAME SETTINGS</h2>
 <label for="displayName">Greeting mein naam (VIHUHUHU ko badlein)</label>
@@ -74,14 +74,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 <button onclick="saveDisplayName()" style="width:100%">SAVE GREETING NAME</button>
 <p id="nameMessage" class="note">Default: VIHUHUHU</p>
 </section>
-<section class="panel">
-<h2>🔑 REFERENCE PAIRING CODE</h2>
-<label for="phone">WhatsApp number (country code ke saath)</label>
-<input id="phone" inputmode="numeric" placeholder="Example: 919876543210">
-<button onclick="getPairCode()" style="width:100%">GENERATE PAIRING CODE</button>
-<div id="pairCode" class="code">----</div>
-<p class="note">Code milne par WhatsApp mein Linked Devices → Link a device → Link with phone number se enter karein. Number digits only, country code ke saath.</p>
-</section>
+
 <section class="panel">
 <h2>📋 AAIRA MENU / STATUS</h2>
 <pre>!ping  — Check bot reply
@@ -100,7 +93,7 @@ async function saveDisplayName(){const displayName=document.getElementById('disp
 async function refreshStatus(){try{const r=await fetch('/api/status');const d=await r.json();const c=document.getElementById('connection');c.textContent=d.connection;c.className='pill '+(d.connection==='Connected'?'green':'red');document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';}catch(e){document.getElementById('connection').textContent='Status unavailable'}}
 async function toggleBot(action){const r=await fetch('/toggle?action='+action);const d=await r.json();alert(d.message||d.botStatus);refreshStatus()}
 async function toggleAuto(action){const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus()}
-async function getPairCode(){const phone=document.getElementById('phone').value.replace(/\\D/g,'');const box=document.getElementById('pairCode');if(!phone){alert('WhatsApp number enter karein');return}box.textContent='Generating...';try{const r=await fetch('/pair?phone='+encodeURIComponent(phone));const d=await r.json();box.textContent=d.pairingCode||d.message||d.error||'Could not generate code';if(!r.ok)alert(d.error||'Pairing code error')}catch(e){box.textContent='Request failed';alert('Server se connection nahi hua')}}
+async function getLivePairCode(){const phone=document.getElementById('livePhone').value.replace(/\\D/g,'');const box=document.getElementById('livePairCode');if(!phone){alert('WhatsApp number enter karein');return}box.textContent='Generating...';try{const r=await fetch('/pair?phone='+encodeURIComponent(phone));const d=await r.json();box.textContent=d.pairingCode||d.message||d.error||'Could not generate code';if(!r.ok)alert(d.error||'Pairing code error')}catch(e){box.textContent='Request failed';alert('Server se connection nahi hua')}}
 refreshStatus();loadDisplayName();setInterval(refreshStatus,10000);
 function openLiveDashboard(){const wrap=document.querySelector('.wrap');for(const el of wrap.children){if(el.id==='liveChatPanel'){el.style.display='block';}else{el.style.display='none';}}document.getElementById('liveChatPanel').scrollIntoView({behavior:'smooth',block:'start'});renderLiveChats()}function backToMainDashboard(){const wrap=document.querySelector('.wrap');for(const el of wrap.children){el.style.display='';}document.getElementById('liveChatPanel').style.display='none';window.scrollTo({top:0,behavior:'smooth'})}
 let liveChatSource=null,liveChatItems=[],selectedLiveJid=null;
