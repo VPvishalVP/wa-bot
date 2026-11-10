@@ -39,16 +39,16 @@ background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.045) 50%,tra
 header{text-align:center;padding:25px 10px}
 .logo{font-size:38px;font-weight:900;letter-spacing:5px;text-shadow:0 0 18px #ddd}
 .subtitle{color:#aaa;letter-spacing:2px;margin-top:8px}
-.panel{background:rgba(15,15,15,.72);border:1px solid #555;border-radius:18px;
+.panel{background:rgba(15,15,15,.58);border:1px solid #555;border-radius:18px;
 padding:22px;margin:16px 0;box-shadow:0 0 22px rgba(255,255,255,.06)}
 h2{font-size:17px;letter-spacing:1.5px;margin:0 0 16px;color:#eee}
 .status{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .pill{border:1px solid #777;border-radius:30px;padding:8px 14px;font-size:13px}
 .green{color:#cfcfcf;border-color:#aaa}.red{color:#999;border-color:#555}
-input{width:100%;background:#050505;color:white;border:1px solid #666;border-radius:10px;
+input{width:100%;background:rgba(5,5,5,.58);color:white;border:1px solid #666;border-radius:10px;
 padding:13px;margin:8px 0 12px;font-size:15px;outline:none}
 input:focus{border-color:#eee;box-shadow:0 0 8px #777}
-button{background:#080808;color:#fff;border:1px solid #aaa;border-radius:10px;
+button{background:rgba(8,8,8,.58);color:#fff;border:1px solid #aaa;border-radius:10px;
 padding:12px 16px;margin:4px;cursor:pointer;font-weight:bold;transition:.2s}
 button:hover{background:#eee;color:#000;box-shadow:0 0 14px #aaa}
 button:disabled{opacity:.45;cursor:not-allowed}
@@ -56,12 +56,12 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .code{font-size:26px;letter-spacing:5px;text-align:center;padding:15px;color:#fff;
 border:1px dashed #aaa;border-radius:12px;margin-top:12px;min-height:60px}
 .note{font-size:12px;color:#aaa;line-height:1.6}
-.chat-layout{display:grid;grid-template-columns:minmax(110px,32%) 1fr;gap:10px;min-height:300px}.chat-contacts,.chat-messages{border:1px solid #555;border-radius:10px;padding:8px;min-width:0}.chat-contacts{max-height:360px;overflow:auto}.contact{display:block;width:100%;text-align:left;margin:3px 0;overflow-wrap:anywhere}.chat-messages{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;background:#050505}.bubble{max-width:90%;padding:9px 11px;border:1px solid #666;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}.bubble.in{align-self:flex-start}.bubble.out{align-self:flex-end;border-color:#aaa;background:#171717}.chat-compose{display:flex;gap:6px;margin-top:10px}.chat-compose input{margin:0;flex:1;min-width:0}
+.chat-layout{display:grid;grid-template-columns:minmax(110px,32%) 1fr;gap:10px;min-height:300px}.chat-contacts,.chat-messages{border:1px solid #555;border-radius:10px;padding:8px;min-width:0}.chat-contacts{max-height:360px;overflow:auto}.contact{display:block;width:100%;text-align:left;margin:3px 0;overflow-wrap:anywhere}.chat-messages{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;.chat-messages{background:rgba(5,5,5,.42)}.chat-contacts{background:rgba(5,5,5,.28)}.bubble{max-width:90%;padding:9px 11px;border:1px solid #666;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}.bubble.in{align-self:flex-start}.bubble.out{align-self:flex-end;border-color:#aaa;background:#171717}.chat-compose{display:flex;gap:6px;margin-top:10px}.chat-compose input{margin:0;flex:1;min-width:0}
 pre{white-space:pre-wrap;color:#ddd;font-size:13px}
 footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </style>
 </head>
-<body><section id="authGate" style="position:fixed;inset:0;z-index:99;background:#050505;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur 6-64 characters password se login karein ya account banayein.</p><label>Mobile number (country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="919876543210"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button onclick="authAction('login')">LOGIN</button><button onclick="authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section><div class="wrap">
+<body><section id="authGate" style="position:fixed;inset:0;z-index:99;background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.62)),url("/anime-bg.jpg") center center / cover no-repeat;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur 6-64 characters password se login karein ya account banayein.</p><label>Mobile number (country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="919876543210"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button onclick="authAction('login')">LOGIN</button><button onclick="authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section><div class="wrap">
 <header id="mainHeader"><div class="logo">AAIRA ✦</div><div class="subtitle">VIHUHUHU KA OFFLINE ASSISTANT</div><button id="openLiveDashboard" onclick="openLiveDashboard()" style="width:100%;max-width:420px;margin:18px auto;font-size:16px">💬 LIVE WHATSAPP</button></header>
 <section class="panel">
 <div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected</span></div>
