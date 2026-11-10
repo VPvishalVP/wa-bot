@@ -145,6 +145,7 @@ const { getChatReply } = require('./chatBank');
 const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
+const recentChatContexts = new Map(); // transient per-sender context in RAM only
 const accountSockets = new Map();
 const accountStatus = new Map();
 const accountStarting = new Map();
@@ -223,7 +224,14 @@ async function startAccountBot(ownerPhone){
           await send('*Heyy! 💗 Mai '+greetingName+' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(greetingKey);
         }
-        let replyText;try{replyText=getChatReply(textMessage);}catch(e){console.error('[WA] Chat reply error:',e.message);continue;}
+        const contextKey=ownerPhone+':'+sender;
+        const chatHistory=recentChatContexts.get(contextKey)||[];
+        let replyText;try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});}catch(e){console.error('[WA] Chat reply error:',e.message);continue;}
+        chatHistory.push({role:'user',text:textMessage});
+        if(replyText)chatHistory.push({role:'assistant',text:replyText});
+        if(chatHistory.length>12)chatHistory.splice(0,chatHistory.length-12);
+        recentChatContexts.delete(contextKey);recentChatContexts.set(contextKey,chatHistory);
+        if(recentChatContexts.size>3000){const oldest=recentChatContexts.keys().next().value;recentChatContexts.delete(oldest);}
         if(replyText)await send(replyText);
       }catch(err){console.error('[WA] Message processing error:',err.message);}}
     });
