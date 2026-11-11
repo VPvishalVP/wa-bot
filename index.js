@@ -220,8 +220,6 @@ async function startAccountBot(ownerPhone){
         if(!settings.botActive||!settings.autoReplyEnabled)continue;
         const send=(text)=>socket.sendMessage(sender,{text});
         const aiSettings=await aairaAuth.getAISettings(ownerPhone);
-        // Hard gate: if both reply engines are OFF, do not send even a welcome message.
-        if(!aiSettings.groqAIEnabled&&!aiSettings.savedModelEnabled)continue;
         const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
         const greetingKey=ownerPhone+':'+sender;
         const contextKey=ownerPhone+':'+sender;
@@ -245,7 +243,6 @@ async function startAccountBot(ownerPhone){
         const latestBotSettings=await aairaAuth.getBotSettings(ownerPhone);
         const latestAISettings=await aairaAuth.getAISettings(ownerPhone);
         if(!latestBotSettings.botActive||!latestBotSettings.autoReplyEnabled)continue;
-        if(!latestAISettings.groqAIEnabled&&!latestAISettings.savedModelEnabled)continue;
         if(generatedByAI&&!latestAISettings.groqAIEnabled){
           if(latestAISettings.savedModelEnabled){
             try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});generatedBySavedModel=!!replyText;generatedByAI=false;}
@@ -253,9 +250,9 @@ async function startAccountBot(ownerPhone){
           }else continue;
         }
         if(generatedBySavedModel&&!latestAISettings.savedModelEnabled)continue;
-        // Welcome template is part of Saved Model, so it must never run with Saved Model OFF.
-        if(latestAISettings.savedModelEnabled&&!greetedSenders.has(greetingKey)){
-          await send('*Heyy! 💗 Mai '+greetingName+' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+        // Always send the welcome template on first incoming message, independent of Groq/Saved Model toggles.
+        if(!greetedSenders.has(greetingKey)){
+          await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(greetingKey);
         }
         chatHistory.push({role:'user',text:textMessage});
