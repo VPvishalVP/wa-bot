@@ -29,6 +29,10 @@ async function resetPassword(phone, password) {
 async function deleteAccount(phone) {
   return callAuthRpc('aaira_delete_account', { p_phone: phone });
 }
+async function deleteAccountSettings(phone) {
+  const { error } = await supabase.from('aaira_account_settings').delete().eq('phone', phone);
+  if (error) throw error;
+}
 
 async function loadLiveChatBuffer(phone) {
   const { data, error } = await supabase.from('sessions').select('data')
@@ -123,4 +127,4 @@ async function releaseWhatsAppSessionLock(phone, ownerToken) {
   return callAuthRpc('release_whatsapp_session_lock', { p_account_phone: phone, p_owner_token: ownerToken });
 }
 
-module.exports = { register, verify, resetPassword, deleteAccount, getDisplayName, setDisplayName, getBotSettings, getAISettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones, deleteWhatsAppSession, loadLiveChatBuffer, saveLiveChatBuffer };
+module.exports = { register, verify, resetPassword, deleteAccount, deleteAccountSettings, getDisplayName, setDisplayName, getBotSettings, getAISettings, setBotSetting, claimWhatsAppSessionLock, releaseWhatsAppSessionLock, listRegisteredPhones, deleteWhatsAppSession, loadLiveChatBuffer, saveLiveChatBuffer };
