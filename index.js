@@ -219,38 +219,44 @@ async function startAccountBot(ownerPhone){
         const settings=await aairaAuth.getBotSettings(ownerPhone);
         if(!settings.botActive||!settings.autoReplyEnabled)continue;
         const send=(text)=>socket.sendMessage(sender,{text});
+        const aiSettings=await aairaAuth.getAISettings(ownerPhone);
+        // Hard gate: if both reply engines are OFF, do not send even a welcome message.
+        if(!aiSettings.groqAIEnabled&&!aiSettings.savedModelEnabled)continue;
+        const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
         const greetingKey=ownerPhone+':'+sender;
-        let greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim();
-        greetingName=(greetingName||'VIHUHUHU').toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
-        if(!greetedSenders.has(greetingKey)){
-          await send('*Heyy! 💗 Mai '+greetingName+' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
-          greetedSenders.add(greetingKey);
-        }
         const contextKey=ownerPhone+':'+sender;
         const chatHistory=recentChatContexts.get(contextKey)||[];
-        let replyText;
+        let replyText=null;
         let generatedByAI=false;
-        try{
-          const aiSettings=await aairaAuth.getAISettings(ownerPhone);
-          if(aiSettings.groqAIEnabled&&aiSettings.savedModelEnabled&&process.env.GROQ_API_KEY){
+        let generatedBySavedModel=false;
+        // Groq is independent: it can run while Saved Model is OFF.
+        if(aiSettings.groqAIEnabled&&process.env.GROQ_API_KEY){
+          try{
             replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});
             generatedByAI=!!replyText;
-          }
-          if(!replyText)replyText=getChatReply(textMessage,{history:chatHistory.slice()});
-        }catch(e){
-          console.error('[GROQ] AI reply failed; using fixed replies:',e.message);
-          try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});}catch(fallbackError){console.error('[WA] Chat reply error:',fallbackError.message);continue;}
+          }catch(e){console.error('[GROQ] AI reply failed:',e.message);}
         }
-        // Re-check live switches after a potentially slow model call to prevent stale AI output.
+        // Fixed/chat-bank replies are permitted only while Saved Model is ON.
+        if(!replyText&&aiSettings.savedModelEnabled){
+          try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});generatedBySavedModel=!!replyText;}
+          catch(e){console.error('[WA] Saved model reply error:',e.message);}
+        }
+        // Re-check all switches immediately before sending; never fall back to a disabled engine.
         const latestBotSettings=await aairaAuth.getBotSettings(ownerPhone);
+        const latestAISettings=await aairaAuth.getAISettings(ownerPhone);
         if(!latestBotSettings.botActive||!latestBotSettings.autoReplyEnabled)continue;
-        if(generatedByAI){
-          const latestAISettings=await aairaAuth.getAISettings(ownerPhone);
-          if(!latestAISettings.groqAIEnabled||!latestAISettings.savedModelEnabled){
-            console.log('[AI] Discarded generated reply because AI was switched OFF for account',ownerPhone);
-            replyText=getChatReply(textMessage,{history:chatHistory.slice()});
-            generatedByAI=false;
-          }
+        if(!latestAISettings.groqAIEnabled&&!latestAISettings.savedModelEnabled)continue;
+        if(generatedByAI&&!latestAISettings.groqAIEnabled){
+          if(latestAISettings.savedModelEnabled){
+            try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});generatedBySavedModel=!!replyText;generatedByAI=false;}
+            catch(e){replyText=null;generatedByAI=false;generatedBySavedModel=false;}
+          }else continue;
+        }
+        if(generatedBySavedModel&&!latestAISettings.savedModelEnabled)continue;
+        // Welcome template is part of Saved Model, so it must never run with Saved Model OFF.
+        if(latestAISettings.savedModelEnabled&&!greetedSenders.has(greetingKey)){
+          await send('*Heyy! 💗 Mai '+greetingName+' KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+          greetedSenders.add(greetingKey);
         }
         chatHistory.push({role:'user',text:textMessage});
         if(replyText)chatHistory.push({role:'assistant',text:replyText});
