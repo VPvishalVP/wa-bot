@@ -220,16 +220,16 @@ async function startAccountBot(ownerPhone){
         if(!textMessage)continue;
         const settings=await aairaAuth.getBotSettings(ownerPhone);
         if(!settings.botActive)continue;
+        const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
         const send=(text)=>socket.sendMessage(sender,{text});
         const greetingKey=ownerPhone+':'+sender;
-        // Always send the creator welcome message once per sender, even when global Auto Reply is OFF.
+        // Send the saved greeting name in the welcome message, even when global Auto Reply is OFF.
         if(!greetedSenders.has(greetingKey)){
-          await send('*Heyy! 💗 Mai VISHAL ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+          await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(greetingKey);
         }
         if(!settings.autoReplyEnabled)continue;
         const aiSettings=await aairaAuth.getAISettings(ownerPhone);
-        const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
         const contextKey=ownerPhone+':'+sender;
         const chatHistory=recentChatContexts.get(contextKey)||[];
         let replyText=null;
