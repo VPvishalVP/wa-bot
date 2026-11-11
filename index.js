@@ -62,7 +62,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .code{font-size:26px;letter-spacing:5px;text-align:center;padding:15px;color:#fff;
 border:1px dashed #aaa;border-radius:12px;margin-top:12px;min-height:60px}
 .note{font-size:12px;color:#aaa;line-height:1.6}
-.chat-layout{display:grid;grid-template-columns:minmax(110px,32%) 1fr;gap:10px;min-height:300px}.chat-contacts,.chat-messages{border:1px solid #555;border-radius:10px;padding:8px;min-width:0}.chat-contacts{max-height:360px;overflow:auto}.contact{display:block;width:100%;text-align:left;margin:3px 0;overflow-wrap:anywhere}.chat-messages{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;.chat-messages{background:rgba(5,5,5,.42)}.chat-contacts{background:rgba(5,5,5,.28)}.bubble{max-width:90%;padding:9px 11px;border:1px solid #666;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}.message-time{font-size:10px;color:#aaa;text-align:right;margin-top:5px;white-space:nowrap}.bubble.in{align-self:flex-start}.bubble.out{align-self:flex-end;border-color:#aaa;background:#171717}.chat-compose{display:flex;gap:6px;margin-top:10px}.chat-compose input{margin:0;flex:1;min-width:0}
+.chat-layout{display:grid;grid-template-columns:minmax(110px,32%) 1fr;gap:10px;min-height:300px}.chat-contacts,.chat-messages{border:1px solid #555;border-radius:10px;padding:8px;min-width:0}.chat-contacts{max-height:360px;overflow:auto}.contact{display:block;width:100%;text-align:left;margin:3px 0;overflow-wrap:anywhere}.chat-messages{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;background:rgba(5,5,5,.42)}.chat-contacts{background:rgba(5,5,5,.28)}.bubble{max-width:90%;padding:9px 11px;border:1px solid #666;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}.message-time{font-size:10px;color:#aaa;text-align:right;margin-top:5px;white-space:nowrap}.bubble.in{align-self:flex-start}.bubble.out{align-self:flex-end;border-color:#aaa;background:#171717}.chat-compose{display:flex;gap:6px;margin-top:10px}.chat-compose input{margin:0;flex:1;min-width:0}
 pre{white-space:pre-wrap;color:#ddd;font-size:13px}
 footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </style>
@@ -228,7 +228,7 @@ async function startAccountBot(ownerPhone){
         let generatedByAI=false;
         let generatedBySavedModel=false;
         // Groq is independent: it can run while Saved Model is OFF.
-        if(aiSettings.groqAIEnabled&&process.env.GROQ_API_KEY){
+        if(aiSettings.groqAIEnabled&&(process.env.GROQ_API_KEY||process.env.GROQ_API_KEY_2)){
           try{
             replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});
             generatedByAI=!!replyText;
