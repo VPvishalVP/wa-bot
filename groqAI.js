@@ -17,6 +17,11 @@ async function getGroqReply(message, options = {}) {
   if (!available.length || !String(message || '').trim()) return null;
   const displayName = String(options.displayName || 'VIHUHUHU').trim().slice(0, 40) || 'VIHUHUHU';
   const history = Array.isArray(options.history) ? options.history.slice(-12) : [];
+  const imageDataUrl = typeof options.imageDataUrl === 'string' && options.imageDataUrl.startsWith('data:image/') ? options.imageDataUrl : null;
+  const userContent = imageDataUrl ? [
+    { type: 'text', text: String(message || 'Is image ko dekho aur jo dikh raha hai uske baare mein batao.').slice(0, 4000) },
+    { type: 'image_url', image_url: { url: imageDataUrl } }
+  ] : String(message).slice(0, 4000);
   const messages = [
     {
       role: 'system',
@@ -26,14 +31,14 @@ async function getGroqReply(message, options = {}) {
       role: item.role === 'assistant' ? 'assistant' : 'user',
       content: String(item.text || '').slice(0, 2000)
     })),
-    { role: 'user', content: String(message).slice(0, 4000) }
+    { role: 'user', content: userContent }
   ];
 
   let lastError;
   for (const { client, index } of available) {
     try {
       const response = await client.chat.completions.create({
-        model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+        model: process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
         messages,
         temperature: 0.7,
         max_tokens: 300
