@@ -1,5 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, DisconnectReason, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, DisconnectReason, fetchLatestWaWebVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
 const http = require('http');
 
@@ -216,7 +216,16 @@ async function startAccountBot(ownerPhone){
         if(liveJid&&liveJid!=='status@broadcast'&&!liveJid.endsWith('@g.us')){const liveText=liveMessageText(msg.message).trim();if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,whatsappName:msg.pushName||msg.verifiedBizName||'',phoneNumber:liveJid?.endsWith('@s.whatsapp.net')?liveJid.split('@')[0]:'',fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()})}
         if(msg.key.fromMe)continue;
         const sender=liveJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;
-        const textMessage=liveMessageText(msg.message).trim();
+        let visionMessage=msg.message;
+        for(let depth=0;depth<5;depth++){
+          if(visionMessage?.ephemeralMessage?.message)visionMessage=visionMessage.ephemeralMessage.message;
+          else if(visionMessage?.viewOnceMessage?.message)visionMessage=visionMessage.viewOnceMessage.message;
+          else if(visionMessage?.viewOnceMessageV2?.message)visionMessage=visionMessage.viewOnceMessageV2.message;
+          else if(visionMessage?.documentWithCaptionMessage?.message)visionMessage=visionMessage.documentWithCaptionMessage.message;
+          else break;
+        }
+        const incomingImage=visionMessage?.imageMessage||null;
+        const textMessage=liveMessageText(msg.message).trim()||(incomingImage?'Is image ko dekho aur jo dikh raha hai uske baare mein batao.':'');
         if(!textMessage)continue;
         const settings=await aairaAuth.getBotSettings(ownerPhone);
         if(!settings.botActive)continue;
@@ -238,7 +247,17 @@ async function startAccountBot(ownerPhone){
         // Groq is independent: it can run while Saved Model is OFF.
         if(aiSettings.groqAIEnabled&&(process.env.GROQ_API_KEY||process.env.GROQ_API_KEY_2)){
           try{
-            replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});
+            let imageDataUrl=null;
+            if(incomingImage){
+              try{
+                const imageBuffer=await downloadMediaMessage({...msg,message:visionMessage},'buffer',{});
+                if(imageBuffer&&imageBuffer.length){
+                  const mimeType=String(incomingImage.mimetype||'image/jpeg').split(';')[0];
+                  imageDataUrl='data:'+mimeType+';base64,'+imageBuffer.toString('base64');
+                }
+              }catch(imageError){console.error('[GROQ] WhatsApp image download failed:',imageError.message);}
+            }
+            replyText=await getGroqReply(textMessage,{history:chatHistory.slice(),displayName:greetingName,imageDataUrl});
             generatedByAI=!!replyText;
           }catch(e){console.error('[GROQ] AI reply failed:',e.message);}
         }
