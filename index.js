@@ -219,11 +219,17 @@ async function startAccountBot(ownerPhone){
         const textMessage=liveMessageText(msg.message).trim();
         if(!textMessage)continue;
         const settings=await aairaAuth.getBotSettings(ownerPhone);
-        if(!settings.botActive||!settings.autoReplyEnabled)continue;
+        if(!settings.botActive)continue;
         const send=(text)=>socket.sendMessage(sender,{text});
+        const greetingKey=ownerPhone+':'+sender;
+        // Always send the creator welcome message once per sender, even when global Auto Reply is OFF.
+        if(!greetedSenders.has(greetingKey)){
+          await send('*Heyy! 💗 Mai VISHAL ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+          greetedSenders.add(greetingKey);
+        }
+        if(!settings.autoReplyEnabled)continue;
         const aiSettings=await aairaAuth.getAISettings(ownerPhone);
         const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
-        const greetingKey=ownerPhone+':'+sender;
         const contextKey=ownerPhone+':'+sender;
         const chatHistory=recentChatContexts.get(contextKey)||[];
         let replyText=null;
@@ -252,11 +258,6 @@ async function startAccountBot(ownerPhone){
           }else continue;
         }
         if(generatedBySavedModel&&!latestAISettings.savedModelEnabled)continue;
-        // Always send the welcome template on first incoming message, independent of Groq/Saved Model toggles.
-        if(!greetedSenders.has(greetingKey)){
-          await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
-          greetedSenders.add(greetingKey);
-        }
         chatHistory.push({role:'user',text:textMessage});
         if(replyText)chatHistory.push({role:'assistant',text:replyText});
         if(chatHistory.length>12)chatHistory.splice(0,chatHistory.length-12);
