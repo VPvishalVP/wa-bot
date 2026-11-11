@@ -1,16 +1,20 @@
 const Groq = require('groq-sdk');
 
-let client;
-function getClient() {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
-  if (!client) client = new Groq({ apiKey });
-  return client;
+const clients = new Map();
+function getClients() {
+  const keys = [...new Set([
+    process.env.GROQ_API_KEY,
+    process.env.GROQ_API_KEY_2
+  ].map(key => String(key || '').trim()).filter(Boolean))];
+  return keys.map((apiKey, index) => {
+    if (!clients.has(apiKey)) clients.set(apiKey, new Groq({ apiKey, maxRetries: 1 }));
+    return { client: clients.get(apiKey), index: index + 1 };
+  });
 }
 
 async function getGroqReply(message, options = {}) {
-  const groq = getClient();
-  if (!groq || !String(message || '').trim()) return null;
+  const available = getClients();
+  if (!available.length || !String(message || '').trim()) return null;
   const displayName = String(options.displayName || 'VIHUHUHU').trim().slice(0, 40) || 'VIHUHUHU';
   const history = Array.isArray(options.history) ? options.history.slice(-12) : [];
   const messages = [
@@ -24,13 +28,29 @@ async function getGroqReply(message, options = {}) {
     })),
     { role: 'user', content: String(message).slice(0, 4000) }
   ];
-  const response = await groq.chat.completions.create({
-    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    messages,
-    temperature: 0.7,
-    max_tokens: 300
-  });
-  return response.choices?.[0]?.message?.content?.trim() || null;
+
+  let lastError;
+  for (const { client, index } of available) {
+    try {
+      const response = await client.chat.completions.create({
+        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        messages,
+        temperature: 0.7,
+        max_tokens: 300
+      });
+      const reply = response.choices?.[0]?.message?.content?.trim() || null;
+      if (reply) {
+        if (index > 1) console.log('[GROQ] Secondary API key successfully used.');
+        return reply;
+      }
+    } catch (error) {
+      lastError = error;
+      console.error('[GROQ] API key slot ' + index + ' failed:', error.status || error.code || error.message);
+      if (index < available.length) console.warn('[GROQ] Switching to next configured API key.');
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
 }
 
 module.exports = { getGroqReply };
