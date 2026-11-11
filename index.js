@@ -171,7 +171,7 @@ async function startAccountBot(ownerPhone){
     try{const savedChats=await aairaAuth.loadLiveChatBuffer(ownerPhone);liveChatBuffers.set(ownerPhone,savedChats.slice(-1000));}catch(e){console.error('[LIVE CHAT] Restore failed:',e.message);}
     const {state,saveCreds,clearAuthState}=await useSupabaseAuthState('account_'+ownerPhone);
     let waVersion;try{const live=await fetchLatestWaWebVersion();if(Array.isArray(live?.version)&&live.version.length===3)waVersion=live.version;}catch(e){console.warn('[WA] Version lookup:',e.message);}
-    const socket=makeWASocket({... (waVersion?{version:waVersion}:{}),auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,syncFullHistory:false,shouldSyncHistoryMessage:()=>false,browser:['Ubuntu','Chrome','20.0.04']});
+    const socket=makeWASocket({... (waVersion?{version:waVersion}:{}),auth:state,printQRInTerminal:false,connectTimeoutMs:60000,keepAliveIntervalMs:25000,syncFullHistory:false,browser:['Ubuntu','Chrome','20.0.04']});
     const oldLockTimer=accountLockTimers.get(ownerPhone);if(oldLockTimer)clearInterval(oldLockTimer);
     const lockTimer=setInterval(()=>{aairaAuth.claimWhatsAppSessionLock(ownerPhone,instanceToken,120).then(ok=>{if(!ok){console.error('[WA] Session lock lost for account',ownerPhone);const active=accountSockets.get(ownerPhone);if(active===socket){accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');adminRouter.setWhatsAppStatus(ownerPhone,'Disconnected');try{socket.end(undefined);}catch(e){}}}}).catch(e=>console.error('[WA] Session lock renewal failed:',e.message));},45000);accountLockTimers.set(ownerPhone,lockTimer);
     accountSockets.set(ownerPhone,socket);accountStatus.set(ownerPhone,'Connecting');adminRouter.setWhatsAppStatus(ownerPhone,'Connecting');
@@ -213,8 +213,8 @@ async function startAccountBot(ownerPhone){
         const liveJid=preferredContactJid(msg.key.remoteJid,msg.key.remoteJidAlt);
         if(liveJid&&liveJid!=='status@broadcast'&&!liveJid.endsWith('@g.us')){const liveText=liveMessageText(msg.message).trim();if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,whatsappName:msg.pushName||msg.verifiedBizName||'',phoneNumber:liveJid?.endsWith('@s.whatsapp.net')?liveJid.split('@')[0]:'',fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()})}
         if(msg.key.fromMe)continue;
-        const sender=msg.key.remoteJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;
-        const textMessage=(msg.message.conversation||msg.message.extendedTextMessage?.text||msg.message.imageMessage?.caption||msg.message.videoMessage?.caption||'').trim();
+        const sender=liveJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;
+        const textMessage=liveMessageText(msg.message).trim();
         if(!textMessage)continue;
         const settings=await aairaAuth.getBotSettings(ownerPhone);
         if(!settings.botActive||!settings.autoReplyEnabled)continue;
