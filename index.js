@@ -212,6 +212,18 @@ async function startAccountBot(ownerPhone){
       if(type!=='notify')return;
       for(const msg of messages){try{
         if(!msg.message)continue;
+        // Ignore WhatsApp Status broadcasts and direct replies/reactions quoted from a Status.
+        if(msg.key?.remoteJid==='status@broadcast'||msg.key?.remoteJidAlt==='status@broadcast')continue;
+        let statusCheckMessage=msg.message;
+        for(let depth=0;depth<5;depth++){
+          if(statusCheckMessage?.ephemeralMessage?.message)statusCheckMessage=statusCheckMessage.ephemeralMessage.message;
+          else if(statusCheckMessage?.viewOnceMessage?.message)statusCheckMessage=statusCheckMessage.viewOnceMessage.message;
+          else if(statusCheckMessage?.viewOnceMessageV2?.message)statusCheckMessage=statusCheckMessage.viewOnceMessageV2.message;
+          else if(statusCheckMessage?.documentWithCaptionMessage?.message)statusCheckMessage=statusCheckMessage.documentWithCaptionMessage.message;
+          else break;
+        }
+        const statusContext=statusCheckMessage?.extendedTextMessage?.contextInfo||statusCheckMessage?.imageMessage?.contextInfo||statusCheckMessage?.videoMessage?.contextInfo||statusCheckMessage?.buttonsResponseMessage?.contextInfo||statusCheckMessage?.listResponseMessage?.contextInfo;
+        if(statusContext?.remoteJid==='status@broadcast'||statusContext?.quotedMessage?.statusMentionMessage)continue;
         const liveJid=preferredContactJid(msg.key.remoteJid,msg.key.remoteJidAlt);
         if(liveJid&&liveJid!=='status@broadcast'&&!liveJid.endsWith('@g.us')){const liveText=liveMessageText(msg.message).trim();if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,whatsappName:msg.pushName||msg.verifiedBizName||'',phoneNumber:liveJid?.endsWith('@s.whatsapp.net')?liveJid.split('@')[0]:'',fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()})}
         if(msg.key.fromMe)continue;
