@@ -163,6 +163,7 @@ const accountSockets = new Map();
 const accountStatus = new Map();
 const accountStarting = new Map();
 const accountReconnectTimers = new Map();
+const accountReconnectAttempts = new Map();
 const accountLockTimers = new Map();
 const instanceToken = crypto.randomBytes(24).toString('hex');
 async function cleanupAccountRuntime(phone){phone=String(phone||'').replace(/\D/g,'');const socket=accountSockets.get(phone);if(socket){try{socket.end(undefined);}catch(e){}}accountSockets.delete(phone);accountStatus.set(phone,'Disconnected');const reconnect=accountReconnectTimers.get(phone);if(reconnect){clearTimeout(reconnect);accountReconnectTimers.delete(phone);}const lockTimer=accountLockTimers.get(phone);if(lockTimer){clearInterval(lockTimer);accountLockTimers.delete(phone);}accountStarting.delete(phone);try{await aairaAuth.releaseWhatsAppSessionLock(phone,instanceToken);}catch(e){console.warn('[ACCOUNT DELETE] Lock release failed:',e.message);}liveChatBuffers.delete(phone);liveContactNames.delete(phone);liveWhatsAppNames.delete(phone);liveContactNumbers.delete(phone);liveChatListeners.delete(phone);for(const key of greetedSenders){if(key.startsWith(phone+':'))greetedSenders.delete(key);}for(const key of recentChatContexts.keys()){if(key.startsWith(phone+':'))recentChatContexts.delete(key);}for(const [token,session] of webSessions){if(session.phone===phone)webSessions.delete(token);}await adminRouter.setWhatsAppStatus(phone,'Disconnected');}
@@ -200,7 +201,7 @@ async function startAccountBot(ownerPhone){
     });
     socket.ev.on('connection.update',async(update)=>{
       const {connection,lastDisconnect}=update;
-      if(connection==='open'){accountStatus.set(ownerPhone,'Connected');adminRouter.setWhatsAppStatus(ownerPhone,'Connected');console.log('[WA] Connected account',ownerPhone);}
+      if(connection==='open'){accountReconnectAttempts.delete(ownerPhone);const pendingReconnect=accountReconnectTimers.get(ownerPhone);if(pendingReconnect){clearTimeout(pendingReconnect);accountReconnectTimers.delete(ownerPhone);}accountStatus.set(ownerPhone,'Connected');adminRouter.setWhatsAppStatus(ownerPhone,'Connected');console.log('[WA] Connected account',ownerPhone);}
       if(connection==='connecting'){accountStatus.set(ownerPhone,'Connecting');adminRouter.setWhatsAppStatus(ownerPhone,'Connecting');}
       if(connection==='close'){
         liveChatBuffers.delete(ownerPhone);
@@ -212,7 +213,10 @@ async function startAccountBot(ownerPhone){
           try{await aairaAuth.releaseWhatsAppSessionLock(ownerPhone,instanceToken);}catch(e){}
           console.log('[WA] Account logged out; user can pair again.');
         }else if(!accountReconnectTimers.has(ownerPhone)){
-          const timer=setTimeout(()=>{accountReconnectTimers.delete(ownerPhone);startAccountBot(ownerPhone).catch(e=>console.error('[WA] Reconnect failed:',e.message));},4000);
+          const attempt=(accountReconnectAttempts.get(ownerPhone)||0)+1;accountReconnectAttempts.set(ownerPhone,attempt);
+          const delay=Math.min(4000*Math.pow(2,Math.min(attempt-1,7)),300000);
+          console.log('[WA] Reconnect scheduled for account',ownerPhone,'attempt',attempt,'in',Math.round(delay/1000),'seconds');
+          const timer=setTimeout(()=>{accountReconnectTimers.delete(ownerPhone);startAccountBot(ownerPhone).catch(e=>console.error('[WA] Reconnect failed:',e.message));},delay);
           accountReconnectTimers.set(ownerPhone,timer);
         }
       }
