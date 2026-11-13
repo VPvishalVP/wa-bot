@@ -146,6 +146,18 @@ const { getGroqReply } = require('./groqAI');
 const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
+// Globally prevent AAIRA-linked WhatsApp accounts from auto-chatting with one another.
+let aairaBotPhoneCache = new Set();
+let aairaBotPhoneCacheUpdatedAt = 0;
+async function isAnotherAairaBot(phone) {
+  phone=String(phone||'').replace(/\\D/g,'');
+  if(!phone)return false;
+  if(Date.now()-aairaBotPhoneCacheUpdatedAt>60000){
+    try{aairaBotPhoneCache=new Set((await aairaAuth.listRegisteredPhones()).map(p=>String(p).replace(/\\D/g,'')).filter(Boolean));aairaBotPhoneCacheUpdatedAt=Date.now();}
+    catch(e){console.error('[AAIRA BOT GUARD] Registry refresh failed:',e.message);}
+  }
+  return aairaBotPhoneCache.has(phone);
+}
 const recentChatContexts = new Map(); // transient per-sender context in RAM only
 const accountSockets = new Map();
 const accountStatus = new Map();
@@ -228,6 +240,9 @@ async function startAccountBot(ownerPhone){
         if(liveJid&&liveJid!=='status@broadcast'&&!liveJid.endsWith('@g.us')){const liveText=liveMessageText(msg.message).trim();if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,whatsappName:msg.pushName||msg.verifiedBizName||'',phoneNumber:liveJid?.endsWith('@s.whatsapp.net')?liveJid.split('@')[0]:'',fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()})}
         if(msg.key.fromMe)continue;
         const sender=liveJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;
+        // If the sender is any other paired AAIRA account, ignore it to stop AI-to-AI loops.
+        const senderPhone=sender.endsWith('@s.whatsapp.net')?sender.split('@')[0]:'';
+        if(senderPhone&&await isAnotherAairaBot(senderPhone))continue;
         let visionMessage=msg.message;
         for(let depth=0;depth<5;depth++){
           if(visionMessage?.ephemeralMessage?.message)visionMessage=visionMessage.ephemeralMessage.message;
