@@ -45,5 +45,5 @@
   $('welcomeStartButton')?.addEventListener('click',e=>{e.preventDefault();showGate();});
   $('loginButton')?.addEventListener('click',e=>{e.preventDefault();window.authAction('login');});
   $('registerButton')?.addEventListener('click',e=>{e.preventDefault();window.authAction('register');});
-  document.querySelector('#authGate button[onclick="forgotAccount()"]')?.addEventListener('click',e=>{e.preventDefault();window.forgotAccount();});
+  $('forgotAccountButton')?.addEventListener('click',e=>{e.preventDefault();window.forgotAccount();});
 })();
