@@ -26,7 +26,7 @@ app.get('/background.svg',(req,res)=>res.type('image/svg+xml').sendFile(require(
 let currentDashboardOwnerPhone = null;
 const liveChatBuffers=new Map(),liveChatListeners=new Map(),liveContactNames=new Map(),liveWhatsAppNames=new Map(),liveContactNumbers=new Map();
 function preferredContactJid(primary,alternate){const pn=/^\d{8,15}@s\.whatsapp\.net$/;if(pn.test(String(primary||'')))return primary;if(pn.test(String(alternate||'')))return alternate;return primary||alternate||'';}
-function liveMessageText(message){let m=message||{};for(let i=0;i<5;i++){if(m.ephemeralMessage?.message)m=m.ephemeralMessage.message;else if(m.viewOnceMessage?.message)m=m.viewOnceMessage.message;else if(m.viewOnceMessageV2?.message)m=m.viewOnceMessageV2.message;else if(m.documentWithCaptionMessage?.message)m=m.documentWithCaptionMessage.message;else break;}const t=m.conversation||m.extendedTextMessage?.text||m.imageMessage?.caption||m.videoMessage?.caption||m.documentMessage?.caption||m.buttonsResponseMessage?.selectedDisplayText||m.listResponseMessage?.title||m.templateButtonReplyMessage?.selectedDisplayText||m.pollCreationMessage?.name||m.pollCreationMessageV3?.name||m.locationMessage?.name||m.locationMessage?.address||m.contactMessage?.displayName||m.contactsArrayMessage?.displayName;if(t)return String(t);if(m.imageMessage)return '🖼️ Image'+(m.imageMessage.caption?' — '+m.imageMessage.caption:'');if(m.videoMessage)return '🎥 Video'+(m.videoMessage.caption?' — '+m.videoMessage.caption:'');if(m.audioMessage)return m.audioMessage.ptt?'🎤 Voice message':'🔊 Audio message';if(m.stickerMessage)return '🎭 Sticker';if(m.documentMessage)return '📎 Document: '+(m.documentMessage.fileName||'file');if(m.locationMessage)return '📍 Location';if(m.liveLocationMessage)return '📍 Live location';if(m.contactMessage||m.contactsArrayMessage)return '👤 Contact card';if(m.reactionMessage)return '😊 Reaction: '+(m.reactionMessage.text||'');if(m.pollUpdateMessage)return '📊 Poll vote';if(m.protocolMessage)return 'ℹ️ Message update';return '[Unsupported message content]';}
+function liveMessageText(message){let m=message||{};for(let i=0;i<5;i++){if(m.ephemeralMessage?.message)m=m.ephemeralMessage.message;else if(m.viewOnceMessage?.message)m=m.viewOnceMessage.message;else if(m.viewOnceMessageV2?.message)m=m.viewOnceMessageV2.message;else if(m.documentWithCaptionMessage?.message)m=m.documentWithCaptionMessage.message;else break;}const t=m.conversation||m.extendedTextMessage?.text||m.imageMessage?.caption||m.videoMessage?.caption||m.documentMessage?.caption||m.buttonsResponseMessage?.selectedDisplayText||m.listResponseMessage?.title||m.templateButtonReplyMessage?.selectedDisplayText||m.pollCreationMessage?.name||m.pollCreationMessageV3?.name||m.locationMessage?.name||m.locationMessage?.address||m.contactMessage?.displayName||m.contactsArrayMessage?.displayName;if(t)return String(t);if(m.imageMessage)return '🖼️ Image'+(m.imageMessage.caption?' — '+m.imageMessage.caption:'');if(m.videoMessage)return '🎥 Video'+(m.videoMessage.caption?' — '+m.videoMessage.caption:'');if(m.audioMessage)return m.audioMessage.ptt?'🎤 Voice message':'🔊 Audio message';if(m.stickerMessage)return '🎭 Sticker';if(m.documentMessage)return '📎 Document: '+(m.documentMessage.fileName||'file');if(m.locationMessage)return '📍 Location';if(m.liveLocationMessage)return '📍 Live location';if(m.contactMessage||m.contactsArrayMessage)return '👤 Contact card';if(m.reactionMessage)return '😊 Reaction: '+(m.reactionMessage.text||'');if(m.pollUpdateMessage)return '📊 Poll vote';if(m.protocolMessage)return '';return '';}
 function publishLiveChat(owner,item){if(!owner||!item?.jid)return;let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}const names=liveContactNames.get(owner)||new Map();liveContactNames.set(owner,names);const numbers=liveContactNumbers.get(owner)||new Map();liveContactNumbers.set(owner,numbers);const pnJid=/^(\d{8,15})@s\.whatsapp\.net$/.exec(item.jid);const suppliedNumber=String(item.phoneNumber||'').replace(/\D/g,'');const incomingNumber=pnJid?.[1]||(/^\d{8,15}$/.test(suppliedNumber)?suppliedNumber:'');if(incomingNumber)numbers.set(item.jid,incomingNumber);const incomingName=String(item.contactName||'').trim().slice(0,100),incomingWhatsAppName=String(item.whatsappName||'').trim().slice(0,100);if(incomingName)names.set(item.jid,incomingName);const waNames=liveWhatsAppNames.get(owner)||new Map();liveWhatsAppNames.set(owner,waNames);if(incomingWhatsAppName)waNames.set(item.jid,incomingWhatsAppName);const prior=[...b].reverse().find(x=>x.jid===item.jid&&x.contactName)?.contactName||'',resolvedName=names.get(item.jid)||incomingName||prior||waNames.get(item.jid)||incomingWhatsAppName||'';const entry={id:item.id||require('crypto').randomUUID(),jid:item.jid,text:String(item.text||'').slice(0,4000),contactName:resolvedName,phoneNumber:incomingNumber||numbers.get(item.jid)||'',fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()};if(item.id&&b.some(x=>x.id===item.id&&x.jid===item.jid))return;const existing=b.findIndex(x=>x.jid===entry.jid&&!x.text);if(existing>=0&&entry.text)b.splice(existing,1);else if(existing>=0&&!entry.text){b[existing]={...b[existing],contactName:entry.contactName||b[existing].contactName,timestamp:entry.timestamp};entry.id=b[existing].id;entry.timestamp=b[existing].timestamp;}if(!b.some(x=>x.id===entry.id))b.push(entry);const perJid=b.filter(x=>x.jid===entry.jid);if(perJid.length>100){const remove=new Set(perJid.slice(0,perJid.length-100).map(x=>x.id));b=b.filter(x=>!remove.has(x.id));}const latestByJid=new Map();for(const x of b){const prev=latestByJid.get(x.jid);if(!prev||x.timestamp>prev.timestamp)latestByJid.set(x.jid,x);}const newestJids=[...latestByJid.values()].sort((a,c)=>c.timestamp-a.timestamp).slice(0,100).map(x=>x.jid);const keep=new Set(newestJids);b=b.filter(x=>keep.has(x.jid));if(b.length>1000)b.splice(0,b.length-1000);liveChatBuffers.set(owner,b);aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));for(const fn of liveChatListeners.get(owner)||[]){try{fn(entry)}catch{}}}
 
 const dashboardHtml = `<!DOCTYPE html>
@@ -230,13 +230,7 @@ async function refreshStatus(){
     c.className = 'pill ' + (isConn ? 'green' : 'red');
 
     const connectPanel=document.getElementById('connectWhatsAppPanel');
-    if(connectPanel) connectPanel.style.display='block';
-    const introNote=document.getElementById('connectIntroNote');
-    if(introNote){
-      introNote.textContent = isConn
-        ? '✅ WhatsApp successfully linked hai! Naye number/device se jodna ho toh "RESET & RE-LINK" use karein.'
-        : '❌ WhatsApp abhi linked nahi hai. Niche apna number daal kar "GET PAIRING CODE" dabayein.';
-    }
+    if(connectPanel) connectPanel.style.display = isConn ? 'none' : 'block';
 
     document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';
     document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';
@@ -351,13 +345,116 @@ async function toggleAuto(action){const r=await fetch('/auto-reply?action='+acti
 
 refreshStatus();loadDisplayName();
 
-function openLiveDashboard(){const wrap=document.querySelector('.wrap');for(const el of wrap.children){if(el.id==='liveChatPanel'){el.style.display='block';}else{el.style.display='none';}}document.getElementById('liveChatPanel').scrollIntoView({behavior:'smooth',block:'start'});renderLiveChats()}
+async function openLiveDashboard(){
+  const wrap=document.querySelector('.wrap');
+  for(const el of wrap.children){
+    if(el.id==='liveChatPanel'){
+      el.style.display='block';
+    }else{
+      el.style.display='none';
+    }
+  }
+  document.getElementById('liveChatPanel').scrollIntoView({behavior:'smooth',block:'start'});
+  try{
+    const r=await fetch('/api/live-chat/history?t='+Date.now());
+    const d=await r.json();
+    if(d.success&&Array.isArray(d.items)){
+      liveChatItems=d.items;
+    }
+  }catch(_){}
+  renderLiveChats();
+  connectLiveChat();
+}
 function backToMainDashboard(){const wrap=document.querySelector('.wrap');for(const el of wrap.children){el.style.display='';}document.getElementById('liveChatPanel').style.display='none';window.scrollTo({top:0,behavior:'smooth'})}
 
 let liveChatSource=null,liveChatItems=[],selectedLiveJid=null;
-function connectLiveChat(){if(liveChatSource)liveChatSource.close();liveChatSource=new EventSource('/api/live-chat/stream');liveChatSource.onopen=()=>document.getElementById('liveChatStatus').textContent='Live chat connected • chat history saved';liveChatSource.onerror=()=>document.getElementById('liveChatStatus').textContent='Live chat reconnecting / login required';liveChatSource.addEventListener('snapshot',e=>{liveChatItems=JSON.parse(e.data);renderLiveChats()});liveChatSource.addEventListener('message',e=>{const item=JSON.parse(e.data);liveChatItems.push(item);if(liveChatItems.length>1000)liveChatItems=liveChatItems.slice(-1000);if(!selectedLiveJid)selectedLiveJid=item.jid;renderLiveChats()})}
-function renderLiveChats(){const contacts=document.getElementById('liveChatContacts'),messages=document.getElementById('liveChatMessages'),jids=[...new Set(liveChatItems.map(x=>x.jid))];contacts.replaceChildren();if(!jids.length){const p=document.createElement('p');p.className='note';p.textContent='WhatsApp contacts sync hone ka intezar hai';contacts.appendChild(p)}jids.forEach(jid=>{const item=[...liveChatItems].reverse().find(x=>x.jid===jid),b=document.createElement('button');b.className='contact';const phone=/^\\d{8,15}@s\\.whatsapp\\.net$/.test(jid)?jid.split('@')[0]:(/^\\d{8,15}$/.test(item?.phoneNumber||'')?item.phoneNumber:'');const label=(item?.contactName&&item.contactName!=='WhatsApp Contact')?item.contactName:'WhatsApp Contact';b.textContent=phone?label+' · '+phone:label+' · Number not synced';b.onclick=()=>{selectedLiveJid=jid;renderLiveChats()};contacts.appendChild(b)});messages.replaceChildren();const shown=liveChatItems.filter(x=>x.jid===selectedLiveJid&&x.text).sort((a,b)=>a.timestamp-b.timestamp).slice(-100);if(!shown.length){const p=document.createElement('p');p.className='note';p.textContent='Is contact ka message abhi nahi hai';messages.appendChild(p)}shown.forEach(x=>{const d=document.createElement('div');d.className='bubble '+(x.fromMe?'out':'in');const body=document.createElement('div');body.textContent=x.text;d.appendChild(body);const time=document.createElement('div');time.className='message-time';const stamp=new Date(Number(x.timestamp)||Date.now());time.textContent=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric'}).format(stamp)+' · '+new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}).format(stamp);d.appendChild(time);messages.appendChild(d)});messages.scrollTop=messages.scrollHeight}
-async function sendLiveChatReply(){if(!selectedLiveJid){alert('Pehle contact select karein');return}const input=document.getElementById('liveChatReply'),text=input.value.trim();if(!text)return;try{const r=await fetch('/api/live-chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jid:selectedLiveJid,text})}),d=await r.json();if(!r.ok){alert(d.error||'Message send nahi hua');return}input.value=''}catch(e){alert('Server connection failed')}}
+function connectLiveChat(){
+  if(liveChatSource)liveChatSource.close();
+  liveChatSource=new EventSource('/api/live-chat/stream');
+  liveChatSource.onopen=()=>document.getElementById('liveChatStatus').textContent='Live chat connected • Real-time synced';
+  liveChatSource.onerror=()=>document.getElementById('liveChatStatus').textContent='Live chat connected • Auto-updating';
+  liveChatSource.addEventListener('snapshot',e=>{
+    liveChatItems=JSON.parse(e.data);
+    renderLiveChats();
+  });
+  liveChatSource.addEventListener('message',e=>{
+    const item=JSON.parse(e.data);
+    liveChatItems.push(item);
+    if(liveChatItems.length>1000)liveChatItems=liveChatItems.slice(-1000);
+    renderLiveChats();
+  });
+}
+function renderLiveChats(){
+  const contacts=document.getElementById('liveChatContacts'),messages=document.getElementById('liveChatMessages');
+  const validItems=liveChatItems.filter(x=>x&&x.text&&x.text!=='ℹ️ Message update');
+  const jids=[...new Set(validItems.map(x=>x.jid))];
+
+  if((!selectedLiveJid||!jids.includes(selectedLiveJid))&&jids.length>0){
+    selectedLiveJid=jids[jids.length-1];
+  }
+
+  contacts.replaceChildren();
+  if(!jids.length){
+    const p=document.createElement('p');
+    p.className='note';
+    p.textContent='WhatsApp chats sync hone ka intezar hai';
+    contacts.appendChild(p);
+  }
+
+  jids.forEach(jid=>{
+    const item=[...validItems].reverse().find(x=>x.jid===jid);
+    const b=document.createElement('button');
+    const isSelected=(jid===selectedLiveJid);
+    b.className='contact'+(isSelected?' active':'');
+    b.style.cssText=isSelected?'background:#1f2937;border-color:#10b981':'';
+    const phone=/^\\d{8,15}@s\\.whatsapp\\.net$/.test(jid)?jid.split('@')[0]:(/^\\d{8,15}$/.test(item?.phoneNumber||'')?item.phoneNumber:'');
+    const label=(item?.contactName&&item.contactName!=='WhatsApp Contact')?item.contactName:(phone?'+'+phone:'WhatsApp Contact');
+    b.textContent=phone?label+' ('+phone+')':label;
+    b.onclick=()=>{selectedLiveJid=jid;renderLiveChats();};
+    contacts.appendChild(b);
+  });
+
+  messages.replaceChildren();
+  const shown=validItems.filter(x=>x.jid===selectedLiveJid&&x.text).sort((a,b)=>a.timestamp-b.timestamp).slice(-100);
+  if(!shown.length){
+    const p=document.createElement('p');
+    p.className='note';
+    p.textContent=selectedLiveJid?'Is contact ka abhi koi message nahi hai':'Pehle kisi contact par click karein';
+    messages.appendChild(p);
+  }
+  shown.forEach(x=>{
+    const d=document.createElement('div');
+    d.className='bubble '+(x.fromMe?'out':'in');
+    const body=document.createElement('div');
+    body.textContent=x.text;
+    d.appendChild(body);
+    const time=document.createElement('div');
+    time.className='message-time';
+    const stamp=new Date(Number(x.timestamp)||Date.now());
+    time.textContent=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}).format(stamp);
+    d.appendChild(time);
+    messages.appendChild(d);
+  });
+  messages.scrollTop=messages.scrollHeight;
+}
+async function sendLiveChatReply(){
+  if(!selectedLiveJid){alert('Pehle contact select karein');return}
+  const input=document.getElementById('liveChatReply'),text=input.value.trim();
+  if(!text)return;
+  try{
+    const r=await fetch('/api/live-chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jid:selectedLiveJid,text})}),d=await r.json();
+    if(!r.ok){alert(d.error||'Message send nahi hua');return}
+    liveChatItems.push({
+      id:String(Date.now()),
+      jid:selectedLiveJid,
+      text,
+      fromMe:true,
+      timestamp:Date.now()
+    });
+    input.value='';
+    renderLiveChats();
+  }catch(e){alert('Server connection failed')}
+}
 connectLiveChat();
 </script>
 </body></html>`;
@@ -465,6 +562,22 @@ app.post('/api/settings/display-name',requireWebLogin,async(req,res)=>{
 });
 
 app.get('/', (req, res) => res.type('html').send(dashboardHtml));
+
+app.get('/api/live-chat/history',requireWebLogin,async(req,res)=>{
+  try{
+    const owner=canonicalPhone(getWebSession(req).phone);
+    let b=liveChatBuffers.get(owner);
+    if(!b||!b.length){
+      b=await aairaAuth.loadLiveChatBuffer(owner);
+      liveChatBuffers.set(owner,b||[]);
+    }
+    const cleaned=(b||[]).filter(x=>x&&x.text&&x.text!=='ℹ️ Message update');
+    res.json({success:true,items:cleaned});
+  }catch(e){
+    console.error('[LIVE CHAT] History load failed:',e.message);
+    res.status(500).json({error:'Live chat load failed'});
+  }
+});
 
 app.get('/api/live-chat/stream',(req,res)=>{
   const session=getWebSession(req);
@@ -809,7 +922,6 @@ async function startAccountBot(ownerPhone){
         adminRouter.setWhatsAppStatus(ownerPhone,'Connecting');
       }
       if(connection==='close'){
-        liveChatBuffers.delete(ownerPhone);
         if(accountSockets.get(ownerPhone)!==socket)return;
         accountSockets.delete(ownerPhone);
         accountStatus.set(ownerPhone,'Disconnected');
@@ -904,15 +1016,30 @@ async function startAccountBot(ownerPhone){
         const targetSendJid=msg.key.remoteJid||sender;
         const send=async(text)=>{
           const taggedText=String(text||'').trim()+BOT_WATERMARK;
+          const cleanText=String(text||'').trim();
           try{
             const sentMsg=await socket.sendMessage(targetSendJid,{text:taggedText});
             if(sentMsg?.key?.id)storeMessage(sentMsg.key.id,sentMsg.message);
+            publishLiveChat(ownerPhone,{
+              id:sentMsg?.key?.id||require('crypto').randomUUID(),
+              jid:sender,
+              text:cleanText,
+              fromMe:true,
+              timestamp:Date.now()
+            });
             return sentMsg;
           }catch(err){
             if(msg.key?.remoteJidAlt&&msg.key.remoteJidAlt!==targetSendJid){
               console.warn(`[WA SEND] Retrying to remoteJidAlt ${msg.key.remoteJidAlt}:`,err.message);
               const sentMsg=await socket.sendMessage(msg.key.remoteJidAlt,{text:taggedText});
               if(sentMsg?.key?.id)storeMessage(sentMsg.key.id,sentMsg.message);
+              publishLiveChat(ownerPhone,{
+                id:sentMsg?.key?.id||require('crypto').randomUUID(),
+                jid:sender,
+                text:cleanText,
+                fromMe:true,
+                timestamp:Date.now()
+              });
               return sentMsg;
             }
             throw err;
