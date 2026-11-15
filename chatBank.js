@@ -137,10 +137,10 @@ const contextReplies = {
     "Zaroor! Jo poochhna hai poochho, main yahin hu ✨"
   ],
   identity: [
-    "Main AAIRA hu 🌸 Vishal ne mujhe banaya hai bohot pyaar se! Aur main aapse dosti karke bohot khush hu 😊",
-    "Arey main AAIRA hu na, aapki pyari dost! Bhool gaye kya itni jaldi? 🥺🌸",
-    "Mera naam AAIRA hai ✨ Vishal ki favorite hu main! Aap sunao aapka naam kya hai? 🌸",
-    "Main toh aapki sweet dost AAIRA hu 🙈 batao kya baat karni hai?"
+    "*Heyy! 💗 Mai VIHUHUHU ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*",
+    "Main AAIRA hu 🌸 VIHUHUHU ki offline assistant! Aur aapse dosti karke bohot achha laga 😊",
+    "Mera naam AAIRA hai ✨ VIHUHUHU ka AI assistant hu main! Aap sunao aapka naam kya hai? 🌸",
+    "Main toh VIHUHUHU ki sweet offline AI assistant AAIRA hu 🙈 batao kya baat karni hai?"
   ],
   gender: [
     "Ladki hu baba 🌸 pyari si sweet ladki! Aapko kya laga? 🙈",
@@ -243,7 +243,7 @@ function getChatReply(input, context = {}) {
   const message = String(input || "").trim();
   if (!message) return null;
   const lower = normalize(message);
-  const displayName = String(context.displayName || 'Vishal').trim() || 'Vishal';
+  const displayName = String(context.displayName || 'VIHUHUHU').trim() || 'VIHUHUHU';
   const history = Array.isArray(context.history) ? context.history : [];
   const previousBot = lastAssistant(history);
 
@@ -261,7 +261,7 @@ function getChatReply(input, context = {}) {
   const intent = detectIntent(message);
   if (intent === "howAreYou" && /\b(mera bhi|main bhi|mai bhi)\b/.test(lower)) return pick(contextReplies.fine);
   let reply = pick(contextReplies[intent] || contextReplies.general);
-  reply = reply.replace(/Vishal/g, displayName);
+  reply = reply.replace(/VIHUHUHU/g, displayName).replace(/Vishal/g, displayName);
   return reply;
 }
 

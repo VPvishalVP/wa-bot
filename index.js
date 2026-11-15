@@ -1050,14 +1050,11 @@ async function startAccountBot(ownerPhone){
         const isFirstMessage=!greetedSenders.has(greetingKey);
         if(isFirstMessage){
           greetedSenders.add(greetingKey);
+          await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+          console.log(`[WA] Sent welcome greeting to ${sender} on account ${ownerPhone}`);
         }
 
         if(!settings.autoReplyEnabled){
-          if(isFirstMessage){
-            const naturalGreeting='Heyy! 🌸 Kaise ho aap? Abhi '+greetingName+' thoda busy hai, free hote hi reply aayega! Batao kya baat thi? 😊';
-            await send(naturalGreeting);
-            console.log(`[WA] Sent natural offline greeting to ${sender} on account ${ownerPhone}`);
-          }
           console.log(`[WA] Auto-reply is turned OFF for account ${ownerPhone}. Skipping AI reply.`);
           continue;
         }
