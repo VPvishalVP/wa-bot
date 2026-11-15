@@ -920,12 +920,17 @@ async function startAccountBot(ownerPhone){
         };
 
         const greetingKey=ownerPhone+':'+sender;
-        if(!greetedSenders.has(greetingKey)){
-          await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
+        const isFirstMessage=!greetedSenders.has(greetingKey);
+        if(isFirstMessage){
           greetedSenders.add(greetingKey);
-          console.log(`[WA] Sent welcome greeting to ${sender} on account ${ownerPhone}`);
         }
+
         if(!settings.autoReplyEnabled){
+          if(isFirstMessage){
+            const naturalGreeting='Heyy! 🌸 Kaise ho aap? Abhi '+greetingName+' thoda busy hai, free hote hi reply aayega! Batao kya baat thi? 😊';
+            await send(naturalGreeting);
+            console.log(`[WA] Sent natural offline greeting to ${sender} on account ${ownerPhone}`);
+          }
           console.log(`[WA] Auto-reply is turned OFF for account ${ownerPhone}. Skipping AI reply.`);
           continue;
         }
@@ -954,7 +959,7 @@ async function startAccountBot(ownerPhone){
         }
         // Fixed/chat-bank replies are permitted only while Saved Model is ON.
         if(!replyText&&aiSettings.savedModelEnabled){
-          try{replyText=getChatReply(textMessage,{history:chatHistory.slice()});generatedBySavedModel=!!replyText;}
+          try{replyText=getChatReply(textMessage,{history:chatHistory.slice(),displayName:greetingName});generatedBySavedModel=!!replyText;}
           catch(e){console.error('[WA] Saved model reply error:',e.message);}
         }
         // Re-check all switches immediately before sending; never fall back to a disabled engine.
