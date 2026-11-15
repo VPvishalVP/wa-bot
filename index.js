@@ -660,59 +660,20 @@ const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
 
 // Multi-layer Bot Guard: prevents any two AAIRA bots from ever messaging or auto-replying to each other.
-const knownBotPhones = new Set();
-const knownBotLids = new Set();
-let botRegistryUpdatedAt = 0;
-
-async function refreshAairaBotRegistry() {
-  if (Date.now() - botRegistryUpdatedAt < 20000 && knownBotPhones.size > 0) return;
-  try {
-    const [registered, users] = await Promise.all([
-      aairaAuth.listRegisteredPhones(),
-      db.execute("SELECT phone FROM aaira_user_credentials")
-    ]);
-    for (const p of registered) knownBotPhones.add(canonicalPhone(p));
-    for (const r of users.rows || []) knownBotPhones.add(canonicalPhone(r.phone));
-    for (const p of accountSockets.keys()) knownBotPhones.add(canonicalPhone(p));
-    botRegistryUpdatedAt = Date.now();
-  } catch (e) {
-    console.error('[AAIRA BOT GUARD] Registry refresh failed:', e.message);
+const BOT_WATERMARK = '\u200B'; // Zero-width space embedded in every bot message
+const recentMessagesStore = new Map();
+function storeMessage(id, message) {
+  if (!id || !message) return;
+  recentMessagesStore.set(id, message);
+  if (recentMessagesStore.size > 2000) {
+    const oldest = recentMessagesStore.keys().next().value;
+    recentMessagesStore.delete(oldest);
   }
-}
-
-function isBotSender(ownerPhone, msg, sender, liveJid) {
-  const candidates = [
-    sender,
-    liveJid,
-    msg.key?.remoteJid,
-    msg.key?.remoteJidAlt,
-    msg.key?.participant,
-    msg.key?.participantPn
-  ].filter(Boolean);
-
-  for (const c of candidates) {
-    const str = String(c).trim();
-    if (knownBotLids.has(str)) return true;
-    const p = str.includes('@') ? str.split('@')[0] : str;
-    const cp = canonicalPhone(p);
-    if (knownBotPhones.has(cp) || cp === ownerPhone) return true;
-  }
-
-  const numbers = liveContactNumbers.get(ownerPhone);
-  if (numbers) {
-    for (const c of candidates) {
-      const mapped = numbers.get(c);
-      if (mapped) {
-        const cp = canonicalPhone(mapped);
-        if (knownBotPhones.has(cp) || cp === ownerPhone) return true;
-      }
-    }
-  }
-  return false;
 }
 
 function isBotMessageContent(text) {
   if (!text || typeof text !== 'string') return false;
+  if (text.includes(BOT_WATERMARK)) return true;
   const lower = text.toLowerCase().trim();
   if (lower.includes('offline assistant') && lower.includes('aaira')) return true;
   if (lower.includes('mera name aaira hai') || lower.includes('mera naam aaira hai')) return true;
@@ -726,8 +687,8 @@ function isSenderLooping(senderKey) {
   const now = Date.now();
   let history = senderMessageTimestamps.get(senderKey) || [];
   history = history.filter(ts => now - ts < 30000); // 30 second sliding window
-  if (history.length >= 3) {
-    return true; // 3 or more messages in 30 seconds -> loop breaker!
+  if (history.length >= 4) {
+    return true; // 4 or more messages in 30 seconds -> loop breaker!
   }
   history.push(now);
   senderMessageTimestamps.set(senderKey, history);
@@ -794,7 +755,10 @@ async function startAccountBot(ownerPhone){
       connectTimeoutMs:60000,
       keepAliveIntervalMs:25000,
       syncFullHistory:false,
-      browser:Browsers.ubuntu('Chrome')
+      browser:Browsers.ubuntu('Chrome'),
+      getMessage: async (key) => {
+        return recentMessagesStore.get(key.id) || undefined;
+      }
     });
     const oldLockTimer=accountLockTimers.get(ownerPhone);if(oldLockTimer)clearInterval(oldLockTimer);
     const lockTimer=setInterval(()=>{aairaAuth.claimWhatsAppSessionLock(ownerPhone,instanceToken,120).then(ok=>{if(!ok){console.error('[WA] Session lock lost for account',ownerPhone);const active=accountSockets.get(ownerPhone);if(active===socket){accountSockets.delete(ownerPhone);accountStatus.set(ownerPhone,'Disconnected');adminRouter.setWhatsAppStatus(ownerPhone,'Disconnected');try{socket.end(undefined);}catch(e){}}}}).catch(e=>console.error('[WA] Session lock renewal failed:',e.message));},45000);
@@ -832,12 +796,7 @@ async function startAccountBot(ownerPhone){
           adminRouter.setWhatsAppStatus(ownerPhone,'Connected');
 
           const myJid = socket.user?.id || '';
-          const myPhone = myJid ? canonicalPhone(myJid.split(':')[0]) : ownerPhone;
           const myLid = socket.authState?.creds?.me?.lid;
-          if(myPhone) knownBotPhones.add(myPhone);
-          if(myLid) knownBotLids.add(myLid);
-          knownBotPhones.add(ownerPhone);
-
           console.log('[WA] Connected and verified account',ownerPhone,'LID:',myLid||'none');
         } else {
           accountStatus.set(ownerPhone,'Pairing');
@@ -885,6 +844,7 @@ async function startAccountBot(ownerPhone){
       if(type!=='notify')return;
       for(const msg of messages){try{
         if(!msg.message)continue;
+        if(msg.key?.id)storeMessage(msg.key.id, msg.message);
         // Ignore WhatsApp Status broadcasts and direct replies/reactions quoted from a Status.
         if(msg.key?.remoteJid==='status@broadcast'||msg.key?.remoteJidAlt==='status@broadcast')continue;
         let statusCheckMessage=msg.message;
@@ -902,13 +862,6 @@ async function startAccountBot(ownerPhone){
         if(msg.key.fromMe)continue;
         const sender=liveJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;
 
-        // Anti-Bot Layer 1: Refresh registry & drop any message coming from another AAIRA bot or self
-        await refreshAairaBotRegistry();
-        if(isBotSender(ownerPhone,msg,sender,liveJid)){
-          console.log(`[BOT-TO-BOT GUARD] Blocked bot-to-bot message from ${sender} to account ${ownerPhone}`);
-          continue;
-        }
-
         let visionMessage=msg.message;
         for(let depth=0;depth<5;depth++){
           if(visionMessage?.ephemeralMessage?.message)visionMessage=visionMessage.ephemeralMessage.message;
@@ -921,29 +874,61 @@ async function startAccountBot(ownerPhone){
         const textMessage=liveMessageText(msg.message).trim()||(incomingImage?'Is image ko dekho aur jo dikh raha hai uske baare mein batao.':'');
         if(!textMessage)continue;
 
-        // Anti-Bot Layer 2: Drop any message containing AAIRA bot signatures or commands
+        console.log(`[WA MSG] [${ownerPhone}] From: ${sender} (remoteJid: ${msg.key.remoteJid}) | Text: "${textMessage.slice(0, 50)}"`);
+
+        // Anti-Bot Layer 1: Drop any message containing AAIRA bot signatures or watermark
         if(isBotMessageContent(textMessage)){
-          console.log(`[BOT-TO-BOT GUARD] Blocked message containing AAIRA signature from ${sender}`);
+          console.log(`[BOT-TO-BOT GUARD] Dropped automated bot message from ${sender} to account ${ownerPhone}`);
           continue;
         }
 
-        // Anti-Bot Layer 3: Loop breaker - max 3 incoming messages in 30s per sender
+        // Anti-Bot Layer 2: Self message check
+        const rawSenderPhone=canonicalPhone(sender.includes('@')?sender.split('@')[0]:sender);
+        if(rawSenderPhone===ownerPhone){
+          console.log(`[WA] Ignoring message from self account ${ownerPhone}`);
+          continue;
+        }
+
+        // Anti-Bot Layer 3: Loop breaker - max 4 incoming messages in 30s per sender
         const loopKey=ownerPhone+':'+sender;
         if(isSenderLooping(loopKey)){
           console.warn(`[LOOP GUARD] Rate limit loop breaker active for ${sender} on account ${ownerPhone}. Skipping reply.`);
           continue;
         }
         const settings=await aairaAuth.getBotSettings(ownerPhone);
-        if(!settings.botActive)continue;
+        if(!settings.botActive){
+          console.log(`[WA] Bot is turned OFF for account ${ownerPhone}. Skipping reply.`);
+          continue;
+        }
         const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
-        const send=(text)=>socket.sendMessage(sender,{text});
+        const targetSendJid=msg.key.remoteJid||sender;
+        const send=async(text)=>{
+          const taggedText=String(text||'').trim()+BOT_WATERMARK;
+          try{
+            const sentMsg=await socket.sendMessage(targetSendJid,{text:taggedText});
+            if(sentMsg?.key?.id)storeMessage(sentMsg.key.id,sentMsg.message);
+            return sentMsg;
+          }catch(err){
+            if(msg.key?.remoteJidAlt&&msg.key.remoteJidAlt!==targetSendJid){
+              console.warn(`[WA SEND] Retrying to remoteJidAlt ${msg.key.remoteJidAlt}:`,err.message);
+              const sentMsg=await socket.sendMessage(msg.key.remoteJidAlt,{text:taggedText});
+              if(sentMsg?.key?.id)storeMessage(sentMsg.key.id,sentMsg.message);
+              return sentMsg;
+            }
+            throw err;
+          }
+        };
+
         const greetingKey=ownerPhone+':'+sender;
-        // Send the saved greeting name in the welcome message, even when global Auto Reply is OFF.
         if(!greetedSenders.has(greetingKey)){
           await send('*Heyy! 💗 Mai '+greetingName+' ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*');
           greetedSenders.add(greetingKey);
+          console.log(`[WA] Sent welcome greeting to ${sender} on account ${ownerPhone}`);
         }
-        if(!settings.autoReplyEnabled)continue;
+        if(!settings.autoReplyEnabled){
+          console.log(`[WA] Auto-reply is turned OFF for account ${ownerPhone}. Skipping AI reply.`);
+          continue;
+        }
         const aiSettings=await aairaAuth.getAISettings(ownerPhone);
         const contextKey=ownerPhone+':'+sender;
         const chatHistory=recentChatContexts.get(contextKey)||[];
@@ -988,7 +973,10 @@ async function startAccountBot(ownerPhone){
         if(chatHistory.length>12)chatHistory.splice(0,chatHistory.length-12);
         recentChatContexts.delete(contextKey);recentChatContexts.set(contextKey,chatHistory);
         if(recentChatContexts.size>3000){const oldest=recentChatContexts.keys().next().value;recentChatContexts.delete(oldest);}
-        if(replyText)await send(replyText);
+        if(replyText){
+          console.log(`[WA] Sending AI reply to ${sender} on account ${ownerPhone}: "${replyText.slice(0, 40)}..."`);
+          await send(replyText);
+        }
       }catch(err){console.error('[WA] Message processing error:',err.message);}}
     });
     return socket;
