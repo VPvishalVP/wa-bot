@@ -611,18 +611,82 @@ const { getGroqReply } = require('./groqAI');
 const crypto = require('crypto');
 const aairaAuth = require('./aairaAuth');
 const greetedSenders = new Set();
-// Globally prevent AAIRA-linked WhatsApp accounts from auto-chatting with one another.
-let aairaBotPhoneCache = new Set();
-let aairaBotPhoneCacheUpdatedAt = 0;
-async function isAnotherAairaBot(phone) {
-  phone=canonicalPhone(phone);
-  if(!phone)return false;
-  if(Date.now()-aairaBotPhoneCacheUpdatedAt>60000){
-    try{aairaBotPhoneCache=new Set((await aairaAuth.listRegisteredPhones()).map(p=>canonicalPhone(p)).filter(Boolean));aairaBotPhoneCacheUpdatedAt=Date.now();}
-    catch(e){console.error('[AAIRA BOT GUARD] Registry refresh failed:',e.message);}
+
+// Multi-layer Bot Guard: prevents any two AAIRA bots from ever messaging or auto-replying to each other.
+const knownBotPhones = new Set();
+const knownBotLids = new Set();
+let botRegistryUpdatedAt = 0;
+
+async function refreshAairaBotRegistry() {
+  if (Date.now() - botRegistryUpdatedAt < 20000 && knownBotPhones.size > 0) return;
+  try {
+    const [registered, users] = await Promise.all([
+      aairaAuth.listRegisteredPhones(),
+      db.execute("SELECT phone FROM aaira_user_credentials")
+    ]);
+    for (const p of registered) knownBotPhones.add(canonicalPhone(p));
+    for (const r of users.rows || []) knownBotPhones.add(canonicalPhone(r.phone));
+    for (const p of accountSockets.keys()) knownBotPhones.add(canonicalPhone(p));
+    botRegistryUpdatedAt = Date.now();
+  } catch (e) {
+    console.error('[AAIRA BOT GUARD] Registry refresh failed:', e.message);
   }
-  return aairaBotPhoneCache.has(phone);
 }
+
+function isBotSender(ownerPhone, msg, sender, liveJid) {
+  const candidates = [
+    sender,
+    liveJid,
+    msg.key?.remoteJid,
+    msg.key?.remoteJidAlt,
+    msg.key?.participant,
+    msg.key?.participantPn
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    const str = String(c).trim();
+    if (knownBotLids.has(str)) return true;
+    const p = str.includes('@') ? str.split('@')[0] : str;
+    const cp = canonicalPhone(p);
+    if (knownBotPhones.has(cp) || cp === ownerPhone) return true;
+  }
+
+  const numbers = liveContactNumbers.get(ownerPhone);
+  if (numbers) {
+    for (const c of candidates) {
+      const mapped = numbers.get(c);
+      if (mapped) {
+        const cp = canonicalPhone(mapped);
+        if (knownBotPhones.has(cp) || cp === ownerPhone) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isBotMessageContent(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase().trim();
+  if (lower.includes('offline assistant') && lower.includes('aaira')) return true;
+  if (lower.includes('mera name aaira hai') || lower.includes('mera naam aaira hai')) return true;
+  if (lower.includes('heyy! 💗 mai') || lower.includes('heyy! mai') || lower.includes('heyy! 💗')) return true;
+  if (lower.startsWith('!ping') || lower.startsWith('!menu') || lower.startsWith('!help')) return true;
+  return false;
+}
+
+const senderMessageTimestamps = new Map();
+function isSenderLooping(senderKey) {
+  const now = Date.now();
+  let history = senderMessageTimestamps.get(senderKey) || [];
+  history = history.filter(ts => now - ts < 30000); // 30 second sliding window
+  if (history.length >= 3) {
+    return true; // 3 or more messages in 30 seconds -> loop breaker!
+  }
+  history.push(now);
+  senderMessageTimestamps.set(senderKey, history);
+  return false;
+}
+
 const recentChatContexts = new Map(); // transient per-sender context in RAM only
 const accountSockets = new Map();
 const accountStatus = new Map();
@@ -711,7 +775,15 @@ async function startAccountBot(ownerPhone){
         if(pendingReconnect){clearTimeout(pendingReconnect);accountReconnectTimers.delete(ownerPhone);}
         accountStatus.set(ownerPhone,'Connected');
         adminRouter.setWhatsAppStatus(ownerPhone,'Connected');
-        console.log('[WA] Connected account',ownerPhone);
+
+        const myJid = socket.user?.id || '';
+        const myPhone = myJid ? canonicalPhone(myJid.split(':')[0]) : ownerPhone;
+        const myLid = socket.authState?.creds?.me?.lid;
+        if(myPhone) knownBotPhones.add(myPhone);
+        if(myLid) knownBotLids.add(myLid);
+        knownBotPhones.add(ownerPhone);
+
+        console.log('[WA] Connected account',ownerPhone,'LID:',myLid||'none');
       }
       if(connection==='connecting'){
         accountStatus.set(ownerPhone,'Connecting');
@@ -769,9 +841,14 @@ async function startAccountBot(ownerPhone){
         if(liveJid&&liveJid!=='status@broadcast'&&!liveJid.endsWith('@g.us')){const liveText=liveMessageText(msg.message).trim();if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,whatsappName:msg.pushName||msg.verifiedBizName||'',phoneNumber:liveJid?.endsWith('@s.whatsapp.net')?liveJid.split('@')[0]:'',fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()})}
         if(msg.key.fromMe)continue;
         const sender=liveJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us'))continue;
-        // If the sender is any other paired AAIRA account, ignore it to stop AI-to-AI loops.
-        const senderPhone=sender.endsWith('@s.whatsapp.net')?sender.split('@')[0]:'';
-        if(senderPhone&&await isAnotherAairaBot(senderPhone))continue;
+
+        // Anti-Bot Layer 1: Refresh registry & drop any message coming from another AAIRA bot or self
+        await refreshAairaBotRegistry();
+        if(isBotSender(ownerPhone,msg,sender,liveJid)){
+          console.log(`[BOT-TO-BOT GUARD] Blocked bot-to-bot message from ${sender} to account ${ownerPhone}`);
+          continue;
+        }
+
         let visionMessage=msg.message;
         for(let depth=0;depth<5;depth++){
           if(visionMessage?.ephemeralMessage?.message)visionMessage=visionMessage.ephemeralMessage.message;
@@ -783,6 +860,19 @@ async function startAccountBot(ownerPhone){
         const incomingImage=visionMessage?.imageMessage||null;
         const textMessage=liveMessageText(msg.message).trim()||(incomingImage?'Is image ko dekho aur jo dikh raha hai uske baare mein batao.':'');
         if(!textMessage)continue;
+
+        // Anti-Bot Layer 2: Drop any message containing AAIRA bot signatures or commands
+        if(isBotMessageContent(textMessage)){
+          console.log(`[BOT-TO-BOT GUARD] Blocked message containing AAIRA signature from ${sender}`);
+          continue;
+        }
+
+        // Anti-Bot Layer 3: Loop breaker - max 3 incoming messages in 30s per sender
+        const loopKey=ownerPhone+':'+sender;
+        if(isSenderLooping(loopKey)){
+          console.warn(`[LOOP GUARD] Rate limit loop breaker active for ${sender} on account ${ownerPhone}. Skipping reply.`);
+          continue;
+        }
         const settings=await aairaAuth.getBotSettings(ownerPhone);
         if(!settings.botActive)continue;
         const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
