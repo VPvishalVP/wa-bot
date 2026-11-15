@@ -236,7 +236,7 @@ async function listRegisteredPhones() {
     if (typeof creds === 'string') {
       try { creds = JSON.parse(creds); } catch { continue; }
     }
-    if (creds?.registered === true || creds?.registered === 'true') {
+    if ((creds?.registered === true || creds?.registered === 'true') && creds?.account) {
       phones.push(canonicalPhone(match[1]));
     }
   }

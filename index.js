@@ -81,34 +81,38 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
   <button type="button" onclick="userLogout()" style="max-width:140px;margin:6px auto;font-size:12px;background:rgba(40,10,10,0.6);border-color:#7f1d1d;color:#fca5a5">🚪 LOGOUT</button>
 </header>
 <section class="panel">
-  <div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected</span></div>
-  <div id="waIdentity" class="note" style="margin-top:12px;display:none"><b id="waProfileName"></b><div id="waProfileNumber" style="margin-top:5px"></div><div id="waDeviceName" style="margin-top:5px;color:#aaa"></div></div>
+  <div class="status"><h2>WHATSAPP CONNECTION</h2><span id="connection" class="pill red">Disconnected ❌</span></div>
+  <div id="waIdentity" class="note" style="margin-top:12px;display:none;background:#111;padding:12px;border-radius:10px;border-left:3px solid #10b981"><b id="waProfileName" style="color:#6ee7b7"></b><div id="waProfileNumber" style="margin-top:4px"></div><div id="waDeviceName" style="margin-top:4px;color:#aaa"></div></div>
   <div class="status" style="margin-top:10px"><span>Bot Status</span><span id="bot" class="pill">Checking...</span></div>
   <div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
   <div class="row" style="margin-top:15px"><button onclick="toggleBot('on')">BOT ON</button><button onclick="toggleBot('off')">BOT OFF</button></div>
   <div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
-  <button onclick="refreshStatus()" style="width:100%;margin-top:10px">↻ REFRESH STATUS</button>
+  <div class="row" style="margin-top:10px">
+    <button onclick="refreshStatus()" style="flex:1">↻ REFRESH STATUS</button>
+    <button onclick="disconnectWhatsApp()" style="flex:1;background:rgba(50,15,15,0.7);border-color:#b91c1c;color:#fca5a5">🔌 DISCONNECT / UNLINK</button>
+  </div>
 </section>
 
 <section class="panel" id="connectWhatsAppPanel">
   <div style="border:1px solid #555;border-radius:14px;padding:18px;background:rgba(10,10,10,0.5)">
-    <h2 style="margin-bottom:8px">📱 CONNECT WHATSAPP</h2>
-    <p class="note" style="margin-bottom:12px">Apna WhatsApp number enter karein aur direct pairing code se WhatsApp connect karein.</p>
-    <label for="waPhone">WhatsApp number (10-digit Indian ya country code ke saath)</label>
+    <h2 style="margin-bottom:8px">📱 CONNECT / LINK WHATSAPP</h2>
+    <p class="note" id="connectIntroNote" style="margin-bottom:12px">Apna WhatsApp number enter karein aur direct pairing code se WhatsApp connect karein.</p>
+    <label for="waPhone">WhatsApp number (10-digit mobile number)</label>
     <input id="waPhone" inputmode="numeric" placeholder="8115743185 ya 918115743185">
     <div class="row">
-      <button onclick="connectWhatsApp(false)" id="pairBtn" style="flex:1">🔗 CONNECT WHATSAPP</button>
+      <button onclick="connectWhatsApp(false)" id="pairBtn" style="flex:1">🔗 GET PAIRING CODE</button>
       <button onclick="connectWhatsApp(true)" id="forcePairBtn" style="flex:1;background:rgba(45,15,15,0.7);border-color:#dc2626">🔄 RESET & RE-LINK</button>
     </div>
     <p id="pairMessage" class="note" style="margin-top:14px;font-size:13px;color:#f0f0f0"></p>
     <div id="pairCode" class="code" style="display:none"></div>
-    <div id="pairInstructions" style="display:none;margin-top:14px;font-size:13px;color:#e2e8f0;line-height:1.7;background:#0f172a;padding:14px;border-radius:10px;border-left:4px solid #10b981">
-      <b style="color:#6ee7b7">👉 WhatsApp me Pairing Code Kaise Dalein:</b><br>
-      1. Apne phone me WhatsApp open karein<br>
-      2. <b>Three dots (⋮) ya Settings</b> → <b>Linked Devices</b> par tap karein<br>
+    <div id="pairInstructions" style="display:none;margin-top:14px;font-size:13px;color:#e2e8f0;line-height:1.8;background:#0f172a;padding:16px;border-radius:12px;border:1px solid #10b981">
+      <b style="color:#6ee7b7;font-size:15px">👉 Apne Phone Me WhatsApp Kaise Link Karein:</b><br>
+      1. Apne mobile me <b>WhatsApp</b> app open karein<br>
+      2. Upar teen bindu (<b>⋮</b>) ya <b>Settings</b> → <b>Linked Devices</b> par tap karein<br>
       3. <b>Link a device</b> par click karein<br>
       4. Niche <b>"Link with phone number instead"</b> par click karein<br>
-      5. Upar dikha hua 8-digit code type karein!
+      5. Upar dikha hua 8-digit code (jaise <b>ABCD-1234</b>) daalein!<br>
+      <i style="color:#94a3b8">Code daalte hi ye page automatically Green "Connected ✅" ho jayega.</i>
     </div>
   </div>
 </section>
@@ -221,23 +225,50 @@ async function refreshStatus(){
       if(waInput && !waInput.value && d.ownerPhone) waInput.value=d.ownerPhone;
     }
     const c=document.getElementById('connection');
-    c.textContent=d.connection;
-    c.className='pill '+(d.connection==='Connected'?'green':'red');
+    const isConn = (d.connection === 'Connected');
+    c.textContent = isConn ? 'Connected ✅' : (d.connection === 'Connecting' ? 'Connecting ⏳' : 'Disconnected ❌');
+    c.className = 'pill ' + (isConn ? 'green' : 'red');
+
     const connectPanel=document.getElementById('connectWhatsAppPanel');
-    if(connectPanel)connectPanel.style.display=d.connection==='Connected'?'none':'block';
+    if(connectPanel) connectPanel.style.display='block';
+    const introNote=document.getElementById('connectIntroNote');
+    if(introNote){
+      introNote.textContent = isConn
+        ? '✅ WhatsApp successfully linked hai! Naye number/device se jodna ho toh "RESET & RE-LINK" use karein.'
+        : '❌ WhatsApp abhi linked nahi hai. Niche apna number daal kar "GET PAIRING CODE" dabayein.';
+    }
+
     document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';
     document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';
     const identity=document.getElementById('waIdentity');
-    if(d.connection==='Connected'&&(d.waProfileName||d.waPhoneNumber)){
+    if(isConn && (d.waProfileName || d.waPhoneNumber)){
       identity.style.display='block';
-      document.getElementById('waProfileName').textContent=d.waProfileName||'WhatsApp account';
-      document.getElementById('waProfileNumber').textContent=d.waPhoneNumber||'';
-      document.getElementById('waDeviceName').textContent=d.waDeviceName?'Device: '+d.waDeviceName:'Linked device';
+      document.getElementById('waProfileName').textContent='Linked Account: ' + (d.waProfileName || 'WhatsApp User');
+      document.getElementById('waProfileNumber').textContent='Number: ' + (d.waPhoneNumber || d.ownerPhone || '');
+      document.getElementById('waDeviceName').textContent=d.waDeviceName ? 'Device: ' + d.waDeviceName : 'Linked Companion Device';
     }else{
       identity.style.display='none';
     }
   }catch(e){
     document.getElementById('connection').textContent='Status unavailable';
+  }
+}
+
+async function disconnectWhatsApp(){
+  if(!confirm('Kya aap WhatsApp session disconnect aur unlink karna chahte hain?')) return;
+  const msg=document.getElementById('pairMessage');
+  const code=document.getElementById('pairCode');
+  const inst=document.getElementById('pairInstructions');
+  if(msg) msg.textContent='⏳ WhatsApp disconnect ho raha hai…';
+  if(code) code.style.display='none';
+  if(inst) inst.style.display='none';
+  try{
+    const r=await fetch('/api/whatsapp/disconnect',{method:'POST'});
+    const d=await r.json();
+    alert(d.message || 'WhatsApp session disconnected.');
+    refreshStatus();
+  }catch(e){
+    alert('Disconnect failed: '+(e?.message||'error'));
   }
 }
 
@@ -509,12 +540,13 @@ app.get('/api/status', requireWebLogin, async (req,res)=>{
     const owner=canonicalPhone(getWebSession(req).phone);
     const settings=await aairaAuth.getBotSettings(owner);
     const socket=accountSockets.get(owner);
+    const isReallyConnected = !!(socket && accountStatus.get(owner)==='Connected' && socket.authState?.creds?.registered && socket.authState?.creds?.account);
     const state=accountStatus.get(owner)||'Disconnected';
-    const connection=socket&&state==='Connected'?'Connected':socket&&state==='Connecting'?'Connecting':'Disconnected';
+    const connection=isReallyConnected ? 'Connected' : (state==='Pairing'||state==='Connecting') ? 'Connecting' : 'Disconnected';
     const me=socket?.authState?.creds?.me||{};
     const waProfileName=String(me.name||me.notify||'').trim();
     const rawJid=String(me.id||'').split(':')[0];
-    const waPhoneNumber=rawJid.endsWith('@s.whatsapp.net')?'+'+rawJid.replace('@s.whatsapp.net',''):'';
+    const waPhoneNumber=rawJid ? '+'+rawJid.replace('@s.whatsapp.net','') : '';
     const waDeviceName=String(socket?.user?.name||me.name||'').trim();
     res.json({
       success:true,
@@ -522,13 +554,28 @@ app.get('/api/status', requireWebLogin, async (req,res)=>{
       botActive:settings.botActive,
       autoReplyEnabled:settings.autoReplyEnabled,
       socketReady:!!socket,
-      waProfileName,
-      waPhoneNumber,
-      waDeviceName,
+      waProfileName: isReallyConnected ? waProfileName : '',
+      waPhoneNumber: isReallyConnected ? waPhoneNumber : '',
+      waDeviceName: isReallyConnected ? waDeviceName : '',
       ownerPhone:owner
     });
   }catch(e){
     res.status(500).json({error:'Status load failed'});
+  }
+});
+
+app.post('/api/whatsapp/disconnect', requireWebLogin, async(req,res)=>{
+  try{
+    const owner=canonicalPhone(getWebSession(req).phone);
+    console.log('[WA DISCONNECT] User requested full disconnect & reset for', owner);
+    await cleanupAccountRuntime(owner);
+    await aairaAuth.deleteWhatsAppSession(owner);
+    await aairaAuth.releaseWhatsAppSessionLock(owner);
+    await adminRouter.setWhatsAppStatus(owner, 'Disconnected');
+    res.json({success:true, message:'WhatsApp session disconnected successfully. Ab aap fresh pairing code le sakte hain.'});
+  }catch(e){
+    console.error('[WA DISCONNECT] Failed:', e.message);
+    res.status(500).json({error:'Disconnect failed: '+e.message});
   }
 });
 
@@ -715,7 +762,6 @@ async function cleanupAccountRuntime(phone){
   liveChatListeners.delete(phone);
   for(const key of greetedSenders){if(key.startsWith(phone+':'))greetedSenders.delete(key);}
   for(const key of recentChatContexts.keys()){if(key.startsWith(phone+':'))recentChatContexts.delete(key);}
-  for(const [token,session] of webSessions){if(canonicalPhone(session.phone)===phone)webSessions.delete(token);}
   await adminRouter.setWhatsAppStatus(phone,'Disconnected');
 }
 adminRouter.cleanupAccountRuntime=cleanupAccountRuntime;
@@ -761,6 +807,12 @@ async function startAccountBot(ownerPhone){
     socket.ev.on('creds.update',async()=>{
       try{
         await saveCreds();
+        const isVerifiedLinked = !!(socket.authState?.creds?.registered && socket.authState?.creds?.account);
+        if(isVerifiedLinked && accountStatus.get(ownerPhone) !== 'Connected'){
+          accountStatus.set(ownerPhone,'Connected');
+          adminRouter.setWhatsAppStatus(ownerPhone,'Connected');
+          console.log('[WA] 🎉 Mobile pairing confirmed! Account now fully Connected:',ownerPhone);
+        }
         console.log('[WA] Session credentials saved for account',ownerPhone);
       }catch(err){
         console.error('[WA] Session credentials save failed for account',ownerPhone,err.message);
@@ -773,17 +825,25 @@ async function startAccountBot(ownerPhone){
         accountReconnectAttempts.delete(ownerPhone);
         const pendingReconnect=accountReconnectTimers.get(ownerPhone);
         if(pendingReconnect){clearTimeout(pendingReconnect);accountReconnectTimers.delete(ownerPhone);}
-        accountStatus.set(ownerPhone,'Connected');
-        adminRouter.setWhatsAppStatus(ownerPhone,'Connected');
 
-        const myJid = socket.user?.id || '';
-        const myPhone = myJid ? canonicalPhone(myJid.split(':')[0]) : ownerPhone;
-        const myLid = socket.authState?.creds?.me?.lid;
-        if(myPhone) knownBotPhones.add(myPhone);
-        if(myLid) knownBotLids.add(myLid);
-        knownBotPhones.add(ownerPhone);
+        const isVerifiedLinked = !!(socket.authState?.creds?.registered && socket.authState?.creds?.account);
+        if(isVerifiedLinked){
+          accountStatus.set(ownerPhone,'Connected');
+          adminRouter.setWhatsAppStatus(ownerPhone,'Connected');
 
-        console.log('[WA] Connected account',ownerPhone,'LID:',myLid||'none');
+          const myJid = socket.user?.id || '';
+          const myPhone = myJid ? canonicalPhone(myJid.split(':')[0]) : ownerPhone;
+          const myLid = socket.authState?.creds?.me?.lid;
+          if(myPhone) knownBotPhones.add(myPhone);
+          if(myLid) knownBotLids.add(myLid);
+          knownBotPhones.add(ownerPhone);
+
+          console.log('[WA] Connected and verified account',ownerPhone,'LID:',myLid||'none');
+        } else {
+          accountStatus.set(ownerPhone,'Pairing');
+          adminRouter.setWhatsAppStatus(ownerPhone,'Disconnected');
+          console.log('[WA] Gateway open for pairing (awaiting user to enter code in phone):',ownerPhone);
+        }
       }
       if(connection==='connecting'){
         accountStatus.set(ownerPhone,'Connecting');
