@@ -827,6 +827,56 @@ function isSenderLooping(senderKey) {
   return false;
 }
 
+function isGroupMessage(msg) {
+  if (!msg?.key) return false;
+  const rJid = String(msg.key.remoteJid || '');
+  const rAlt = String(msg.key.remoteJidAlt || '');
+  const part = String(msg.key.participant || '');
+  if (rJid.endsWith('@g.us') || rAlt.endsWith('@g.us') || part.endsWith('@g.us')) return true;
+  if (part && (rJid.includes('-') || rAlt.includes('-'))) return true;
+  return false;
+}
+
+function isStatusRelatedMessage(msg) {
+  if (!msg?.key) return false;
+  const rJid = String(msg.key.remoteJid || '');
+  const rAlt = String(msg.key.remoteJidAlt || '');
+  if (rJid === 'status@broadcast' || rJid.endsWith('@broadcast') || rAlt === 'status@broadcast' || rAlt.endsWith('@broadcast')) return true;
+
+  let m = msg.message;
+  if (!m) return false;
+  for (let depth = 0; depth < 5; depth++) {
+    if (m?.ephemeralMessage?.message) m = m.ephemeralMessage.message;
+    else if (m?.viewOnceMessage?.message) m = m.viewOnceMessage.message;
+    else if (m?.viewOnceMessageV2?.message) m = m.viewOnceMessageV2.message;
+    else if (m?.documentWithCaptionMessage?.message) m = m.documentWithCaptionMessage.message;
+    else break;
+  }
+  if (!m) return false;
+
+  if (m.reactionMessage?.key?.remoteJid === 'status@broadcast') return true;
+
+  const ctx = m.extendedTextMessage?.contextInfo ||
+              m.imageMessage?.contextInfo ||
+              m.videoMessage?.contextInfo ||
+              m.buttonsResponseMessage?.contextInfo ||
+              m.listResponseMessage?.contextInfo ||
+              m.templateButtonReplyMessage?.contextInfo;
+
+  if (ctx) {
+    if (ctx.remoteJid === 'status@broadcast' || ctx.participant === 'status@broadcast') return true;
+    if (ctx.quotedMessage?.statusMentionMessage || ctx.quotedMessage?.protocolMessage) return true;
+  }
+  return false;
+}
+
+function isNewsletterMessage(msg) {
+  if (!msg?.key) return false;
+  const rJid = String(msg.key.remoteJid || '');
+  const rAlt = String(msg.key.remoteJidAlt || '');
+  return rJid.endsWith('@newsletter') || rAlt.endsWith('@newsletter');
+}
+
 const recentChatContexts = new Map(); // transient per-sender context in RAM only
 const accountSockets = new Map();
 const accountStatus = new Map();
@@ -968,30 +1018,28 @@ async function startAccountBot(ownerPhone){
       }
     });
 
-    socket.ev.on('contacts.upsert',contacts=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',whatsappName:contact.notify||contact.pushName||contact.verifiedName||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
-    socket.ev.on('chats.upsert',chats=>{for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||chat.pushName||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
-    socket.ev.on('messaging-history.set',({contacts,chats,messages})=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',whatsappName:contact.notify||contact.pushName||contact.verifiedName||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||'',whatsappName:chat.pushName||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const msg of messages||[]){const jid=preferredContactJid(msg.key?.remoteJid,msg.key?.remoteJidAlt);if(!jid||jid==='status@broadcast'||jid.endsWith('@g.us'))continue;const text=liveMessageText(msg.message);publishLiveChat(ownerPhone,{id:msg.key?.id,jid,text,whatsappName:msg.pushName||msg.verifiedBizName||'',fromMe:!!msg.key?.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()});}});
+    socket.ev.on('contacts.upsert',contacts=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',whatsappName:contact.notify||contact.pushName||contact.verifiedName||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
+    socket.ev.on('chats.upsert',chats=>{for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||chat.pushName||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
+    socket.ev.on('messaging-history.set',({contacts,chats,messages})=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',whatsappName:contact.notify||contact.pushName||contact.verifiedName||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||'',whatsappName:chat.pushName||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const msg of messages||[]){if(isGroupMessage(msg)||isStatusRelatedMessage(msg)||isNewsletterMessage(msg)||msg.key?.participant)continue;const jid=preferredContactJid(msg.key?.remoteJid,msg.key?.remoteJidAlt);if(!jid||jid==='status@broadcast'||jid.endsWith('@g.us')||jid.endsWith('@newsletter')||jid.endsWith('@broadcast'))continue;const text=liveMessageText(msg.message);publishLiveChat(ownerPhone,{id:msg.key?.id,jid,text,whatsappName:msg.pushName||msg.verifiedBizName||'',fromMe:!!msg.key?.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()});}});
     socket.ev.on('messages.upsert',async({messages,type})=>{
       if(type!=='notify')return;
       for(const msg of messages){try{
         if(!msg.message)continue;
         if(msg.key?.id)storeMessage(msg.key.id, msg.message);
-        // Ignore WhatsApp Status broadcasts, newsletters/channels, and direct replies/reactions quoted from a Status.
-        if(msg.key?.remoteJid==='status@broadcast'||msg.key?.remoteJidAlt==='status@broadcast'||msg.key?.remoteJid?.endsWith('@newsletter'))continue;
-        let statusCheckMessage=msg.message;
-        for(let depth=0;depth<5;depth++){
-          if(statusCheckMessage?.ephemeralMessage?.message)statusCheckMessage=statusCheckMessage.ephemeralMessage.message;
-          else if(statusCheckMessage?.viewOnceMessage?.message)statusCheckMessage=statusCheckMessage.viewOnceMessage.message;
-          else if(statusCheckMessage?.viewOnceMessageV2?.message)statusCheckMessage=statusCheckMessage.viewOnceMessageV2.message;
-          else if(statusCheckMessage?.documentWithCaptionMessage?.message)statusCheckMessage=statusCheckMessage.documentWithCaptionMessage.message;
-          else break;
-        }
-        const statusContext=statusCheckMessage?.extendedTextMessage?.contextInfo||statusCheckMessage?.imageMessage?.contextInfo||statusCheckMessage?.videoMessage?.contextInfo||statusCheckMessage?.buttonsResponseMessage?.contextInfo||statusCheckMessage?.listResponseMessage?.contextInfo;
-        if(statusContext?.remoteJid==='status@broadcast'||statusContext?.quotedMessage?.statusMentionMessage)continue;
+
+        // Strict Personal-Only Gate: Completely ignore Groups, Status broadcasts/reactions/replies, Newsletters, and broadcast participants
+        if(isGroupMessage(msg)||isStatusRelatedMessage(msg)||isNewsletterMessage(msg)||msg.key?.participant)continue;
+
         const liveJid=preferredContactJid(msg.key.remoteJid,msg.key.remoteJidAlt);
-        if(liveJid&&liveJid!=='status@broadcast'&&!liveJid.endsWith('@g.us')&&!liveJid.endsWith('@newsletter')){const liveText=liveMessageText(msg.message).trim();if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,whatsappName:msg.pushName||msg.verifiedBizName||'',phoneNumber:liveJid?.endsWith('@s.whatsapp.net')?liveJid.split('@')[0]:'',fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()})}
+        if(!liveJid||liveJid==='status@broadcast'||liveJid.endsWith('@g.us')||liveJid.endsWith('@newsletter')||liveJid.endsWith('@broadcast'))continue;
+
+        const liveText=liveMessageText(msg.message).trim();
+        if(liveText)publishLiveChat(ownerPhone,{id:msg.key.id,jid:liveJid,text:liveText,whatsappName:msg.pushName||msg.verifiedBizName||'',phoneNumber:liveJid?.endsWith('@s.whatsapp.net')?liveJid.split('@')[0]:'',fromMe:!!msg.key.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()});
         if(msg.key.fromMe)continue;
-        const sender=liveJid;if(!sender||sender==='status@broadcast'||sender.endsWith('@g.us')||sender.endsWith('@newsletter'))continue;
+
+        const sender=liveJid;
+        const isPersonalSender=sender.endsWith('@s.whatsapp.net')||(sender.endsWith('@lid')&&lidToPhoneJid.has(sender));
+        if(!isPersonalSender)continue;
 
         let visionMessage=msg.message;
         for(let depth=0;depth<5;depth++){
