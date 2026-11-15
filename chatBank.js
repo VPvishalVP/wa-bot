@@ -140,7 +140,8 @@ const contextReplies = {
     "*Heyy! 💗 Mai VIHUHUHU ♥️ KA OFFLINE ASSISTANT 😴✨ AI HU MERA NAME AAIRA HAI*",
     "Main AAIRA hu 🌸 VIHUHUHU ki offline assistant! Aur aapse dosti karke bohot achha laga 😊",
     "Mera naam AAIRA hai ✨ VIHUHUHU ka AI assistant hu main! Aap sunao aapka naam kya hai? 🌸",
-    "Main toh VIHUHUHU ki sweet offline AI assistant AAIRA hu 🙈 batao kya baat karni hai?"
+    "Main toh VIHUHUHU ki sweet offline AI assistant AAIRA hu 🙈 batao kya baat karni hai?",
+    "Yeh VIHUHUHU ka WhatsApp number hai 🌸 Main unki pyari AI assistant AAIRA hu! VIHUHUHU abhi busy hain, koi message dena ho toh batao 😊"
   ],
   gender: [
     "Ladki hu baba 🌸 pyari si sweet ladki! Aapko kya laga? 🙈",
@@ -207,7 +208,7 @@ const patterns = [
   ["gender", /\b(ladki ho|ladka ho|boy or girl|gender|male ya female)\b/i],
   ["relationship", /\b(bf hai|boyfriend|single ho|shaadi|married|pyaar karti ho)\b/i],
   ["location", /\b(kahan ho|kahan par ho|kidhar ho|where are you|kahan rehti ho|kahan se ho|kahan ki ho)\b/i],
-  ["identity", /\b(tum kaun|aap kaun|kaun ho|kon ho|kaun bol|naam kya|kya naam|who are you|are you ai|ai ho|bot ho|robot|kiska number)\b/i],
+  ["identity", /\b(tum kaun|aap kaun|kaun ho|kon ho|kaun bol|naam kya|kya naam|who are you|are you ai|ai ho|bot ho|robot|kiska number|kiska phone|kiska whatsapp|owner|malik|kisne banaya)\b/i],
   ["youTell", /\b(apna batao|tum batao|aap batao|apna sunao|tum sunao|aap sunao)\b/i],
   ["sayWhat", /\b(kya bolu|kya bolun|kya boloon|kya batau|kya bataun|kya baat karein|kuch nahi|kuch nhi|kuch khas nahi|kuch na)\b/i],
   ["doing", /\b(kya kar rahe|kya kar rahi|what are you doing|kya chal raha|kahan busy|free ho)\b/i],

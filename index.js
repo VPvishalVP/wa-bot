@@ -24,10 +24,11 @@ app.get('/anime-bg.jpg',(req,res)=>res.sendFile(require('path').join(__dirname,'
 app.get('/background.svg',(req,res)=>res.type('image/svg+xml').sendFile(require('path').join(__dirname,'background.svg')));
 
 let currentDashboardOwnerPhone = null;
-const liveChatBuffers=new Map(),liveChatListeners=new Map(),liveContactNames=new Map(),liveWhatsAppNames=new Map(),liveContactNumbers=new Map();
-function preferredContactJid(primary,alternate){const pn=/^\d{8,15}@s\.whatsapp\.net$/;if(pn.test(String(primary||'')))return primary;if(pn.test(String(alternate||'')))return alternate;return primary||alternate||'';}
+const liveChatBuffers=new Map(),liveChatListeners=new Map(),liveContactNames=new Map(),liveWhatsAppNames=new Map(),liveContactNumbers=new Map(),lidToPhoneJid=new Map();
+function registerJidPair(primary,alternate){const p=String(primary||''),a=String(alternate||'');if(p.endsWith('@lid')&&a.endsWith('@s.whatsapp.net'))lidToPhoneJid.set(p,a);else if(a.endsWith('@lid')&&p.endsWith('@s.whatsapp.net'))lidToPhoneJid.set(a,p);}
+function preferredContactJid(primary,alternate){registerJidPair(primary,alternate);const pn=/^\d{8,15}@s\.whatsapp\.net$/;if(pn.test(String(primary||'')))return primary;if(pn.test(String(alternate||'')))return alternate;if(primary&&lidToPhoneJid.has(primary))return lidToPhoneJid.get(primary);if(alternate&&lidToPhoneJid.has(alternate))return lidToPhoneJid.get(alternate);return primary||alternate||'';}
 function liveMessageText(message){let m=message||{};for(let i=0;i<5;i++){if(m.ephemeralMessage?.message)m=m.ephemeralMessage.message;else if(m.viewOnceMessage?.message)m=m.viewOnceMessage.message;else if(m.viewOnceMessageV2?.message)m=m.viewOnceMessageV2.message;else if(m.documentWithCaptionMessage?.message)m=m.documentWithCaptionMessage.message;else break;}const t=m.conversation||m.extendedTextMessage?.text||m.imageMessage?.caption||m.videoMessage?.caption||m.documentMessage?.caption||m.buttonsResponseMessage?.selectedDisplayText||m.listResponseMessage?.title||m.templateButtonReplyMessage?.selectedDisplayText||m.pollCreationMessage?.name||m.pollCreationMessageV3?.name||m.locationMessage?.name||m.locationMessage?.address||m.contactMessage?.displayName||m.contactsArrayMessage?.displayName;if(t)return String(t);if(m.imageMessage)return '🖼️ Image'+(m.imageMessage.caption?' — '+m.imageMessage.caption:'');if(m.videoMessage)return '🎥 Video'+(m.videoMessage.caption?' — '+m.videoMessage.caption:'');if(m.audioMessage)return m.audioMessage.ptt?'🎤 Voice message':'🔊 Audio message';if(m.stickerMessage)return '🎭 Sticker';if(m.documentMessage)return '📎 Document: '+(m.documentMessage.fileName||'file');if(m.locationMessage)return '📍 Location';if(m.liveLocationMessage)return '📍 Live location';if(m.contactMessage||m.contactsArrayMessage)return '👤 Contact card';if(m.reactionMessage)return '😊 Reaction: '+(m.reactionMessage.text||'');if(m.pollUpdateMessage)return '📊 Poll vote';if(m.protocolMessage)return '';return '';}
-function publishLiveChat(owner,item){if(!owner||!item?.jid)return;let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}const names=liveContactNames.get(owner)||new Map();liveContactNames.set(owner,names);const numbers=liveContactNumbers.get(owner)||new Map();liveContactNumbers.set(owner,numbers);const pnJid=/^(\d{8,15})@s\.whatsapp\.net$/.exec(item.jid);const suppliedNumber=String(item.phoneNumber||'').replace(/\D/g,'');const incomingNumber=pnJid?.[1]||(/^\d{8,15}$/.test(suppliedNumber)?suppliedNumber:'');if(incomingNumber)numbers.set(item.jid,incomingNumber);const incomingName=String(item.contactName||'').trim().slice(0,100),incomingWhatsAppName=String(item.whatsappName||'').trim().slice(0,100);if(incomingName)names.set(item.jid,incomingName);const waNames=liveWhatsAppNames.get(owner)||new Map();liveWhatsAppNames.set(owner,waNames);if(incomingWhatsAppName)waNames.set(item.jid,incomingWhatsAppName);const prior=[...b].reverse().find(x=>x.jid===item.jid&&x.contactName)?.contactName||'',resolvedName=names.get(item.jid)||incomingName||prior||waNames.get(item.jid)||incomingWhatsAppName||'';const entry={id:item.id||require('crypto').randomUUID(),jid:item.jid,text:String(item.text||'').slice(0,4000),contactName:resolvedName,phoneNumber:incomingNumber||numbers.get(item.jid)||'',fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()};if(item.id&&b.some(x=>x.id===item.id&&x.jid===item.jid))return;const existing=b.findIndex(x=>x.jid===entry.jid&&!x.text);if(existing>=0&&entry.text)b.splice(existing,1);else if(existing>=0&&!entry.text){b[existing]={...b[existing],contactName:entry.contactName||b[existing].contactName,timestamp:entry.timestamp};entry.id=b[existing].id;entry.timestamp=b[existing].timestamp;}if(!b.some(x=>x.id===entry.id))b.push(entry);const perJid=b.filter(x=>x.jid===entry.jid);if(perJid.length>100){const remove=new Set(perJid.slice(0,perJid.length-100).map(x=>x.id));b=b.filter(x=>!remove.has(x.id));}const latestByJid=new Map();for(const x of b){const prev=latestByJid.get(x.jid);if(!prev||x.timestamp>prev.timestamp)latestByJid.set(x.jid,x);}const newestJids=[...latestByJid.values()].sort((a,c)=>c.timestamp-a.timestamp).slice(0,100).map(x=>x.jid);const keep=new Set(newestJids);b=b.filter(x=>keep.has(x.jid));if(b.length>1000)b.splice(0,b.length-1000);liveChatBuffers.set(owner,b);aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));for(const fn of liveChatListeners.get(owner)||[]){try{fn(entry)}catch{}}}
+function publishLiveChat(owner,item){if(!owner||!item?.jid)return;if(item.jid.endsWith('@lid')&&lidToPhoneJid.has(item.jid)){item.jid=lidToPhoneJid.get(item.jid);}let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}const names=liveContactNames.get(owner)||new Map();liveContactNames.set(owner,names);const numbers=liveContactNumbers.get(owner)||new Map();liveContactNumbers.set(owner,numbers);const pnJid=/^(\d{8,15})@s\.whatsapp\.net$/.exec(item.jid);const suppliedNumber=String(item.phoneNumber||'').replace(/\D/g,'');const incomingNumber=pnJid?.[1]||(/^\d{8,15}$/.test(suppliedNumber)?suppliedNumber:'');if(incomingNumber)numbers.set(item.jid,incomingNumber);const incomingName=String(item.contactName||'').trim().slice(0,100),incomingWhatsAppName=String(item.whatsappName||'').trim().slice(0,100);if(incomingName)names.set(item.jid,incomingName);const waNames=liveWhatsAppNames.get(owner)||new Map();liveWhatsAppNames.set(owner,waNames);if(incomingWhatsAppName)waNames.set(item.jid,incomingWhatsAppName);const prior=[...b].reverse().find(x=>x.jid===item.jid&&x.contactName)?.contactName||'',resolvedName=names.get(item.jid)||incomingName||prior||waNames.get(item.jid)||incomingWhatsAppName||'';let cleanText=String(item.text||'').replace(/\u200B/g,'').trim();if(!cleanText)return;const entry={id:item.id||require('crypto').randomUUID(),jid:item.jid,text:cleanText.slice(0,4000),contactName:resolvedName,phoneNumber:incomingNumber||numbers.get(item.jid)||'',fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()};if(item.id&&b.some(x=>x.id===item.id))return;const existing=b.findIndex(x=>x.jid===entry.jid&&!x.text);if(existing>=0)b.splice(existing,1);b.push(entry);const perJid=b.filter(x=>x.jid===entry.jid);if(perJid.length>100){const remove=new Set(perJid.slice(0,perJid.length-100).map(x=>x.id));b=b.filter(x=>!remove.has(x.id));}const latestByJid=new Map();for(const x of b){const prev=latestByJid.get(x.jid);if(!prev||x.timestamp>prev.timestamp)latestByJid.set(x.jid,x);}const newestJids=[...latestByJid.values()].sort((a,c)=>c.timestamp-a.timestamp).slice(0,100).map(x=>x.jid);const keep=new Set(newestJids);b=b.filter(x=>keep.has(x.jid));if(b.length>1000)b.splice(0,b.length-1000);liveChatBuffers.set(owner,b);aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));for(const fn of liveChatListeners.get(owner)||[]){try{fn(entry)}catch{}}}
 
 const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -62,7 +63,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .code{font-size:30px;letter-spacing:6px;text-align:center;padding:16px;color:#6ee7b7;
 border:2px dashed #10b981;border-radius:14px;margin-top:14px;min-height:60px;background:#052e16}
 .note{font-size:12px;color:#aaa;line-height:1.6}
-.chat-layout{display:grid;grid-template-columns:minmax(110px,32%) 1fr;gap:10px;min-height:300px}.chat-contacts,.chat-messages{border:1px solid #555;border-radius:10px;padding:8px;min-width:0}.chat-contacts{max-height:360px;overflow:auto}.contact{display:block;width:100%;text-align:left;margin:3px 0;overflow-wrap:anywhere}.chat-messages{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;background:rgba(5,5,5,.42)}.chat-contacts{background:rgba(5,5,5,.28)}.bubble{max-width:90%;padding:9px 11px;border:1px solid #666;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}.message-time{font-size:10px;color:#aaa;text-align:right;margin-top:5px;white-space:nowrap}.bubble.in{align-self:flex-start}.bubble.out{align-self:flex-end;border-color:#aaa;background:#171717}.chat-compose{display:flex;gap:6px;margin-top:10px}.chat-compose input{margin:0;flex:1;min-width:0}
+.chat-layout{display:grid;grid-template-columns:minmax(110px,32%) 1fr;gap:10px;min-height:300px}.chat-contacts,.chat-messages{border:1px solid #555;border-radius:10px;padding:8px;min-width:0}.chat-contacts{max-height:360px;overflow:auto}.contact{display:block;width:100%;text-align:left;margin:3px 0;overflow-wrap:anywhere}.chat-messages{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;background:rgba(5,5,5,.65);padding:10px}.chat-contacts{background:rgba(5,5,5,.28)}.bubble{max-width:85%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.4}.bubble.in{align-self:flex-start;background:#202c33;color:#e9edef;border:1px solid #2a3942}.bubble.out{align-self:flex-end;background:#005c4b;color:#e9edef;border:1px solid #005c4b}.bot-tag{font-size:10px;font-weight:bold;color:#34d399;margin-bottom:3px}.message-time{font-size:10px;color:#94a3b8;text-align:right;margin-top:4px;white-space:nowrap}.chat-compose{display:flex;gap:6px;margin-top:10px}.chat-compose input{margin:0;flex:1;min-width:0}
 pre{white-space:pre-wrap;color:#ddd;font-size:13px}
 footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </style>
@@ -415,7 +416,15 @@ function renderLiveChats(){
   });
 
   messages.replaceChildren();
-  const shown=validItems.filter(x=>x.jid===selectedLiveJid&&x.text).sort((a,b)=>a.timestamp-b.timestamp).slice(-100);
+  const selectedItem=[...validItems].reverse().find(x=>x.jid===selectedLiveJid);
+  const selectedPhone=selectedItem?.phoneNumber||(selectedLiveJid?.endsWith('@s.whatsapp.net')?selectedLiveJid.split('@')[0]:'');
+  const shown=validItems.filter(x=>{
+    if(!x||!x.text)return false;
+    if(x.jid===selectedLiveJid)return true;
+    if(selectedPhone&&x.phoneNumber&&x.phoneNumber===selectedPhone)return true;
+    return false;
+  }).sort((a,b)=>a.timestamp-b.timestamp).slice(-100);
+
   if(!shown.length){
     const p=document.createElement('p');
     p.className='note';
@@ -425,13 +434,20 @@ function renderLiveChats(){
   shown.forEach(x=>{
     const d=document.createElement('div');
     d.className='bubble '+(x.fromMe?'out':'in');
+    if(x.fromMe){
+      const tag=document.createElement('div');
+      tag.className='bot-tag';
+      tag.textContent='🤖 AAIRA (Bot)';
+      d.appendChild(tag);
+    }
     const body=document.createElement('div');
     body.textContent=x.text;
     d.appendChild(body);
     const time=document.createElement('div');
     time.className='message-time';
     const stamp=new Date(Number(x.timestamp)||Date.now());
-    time.textContent=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}).format(stamp);
+    const timeStr=new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:true}).format(stamp);
+    time.textContent=timeStr+(x.fromMe?' ✓✓':'');
     d.appendChild(time);
     messages.appendChild(d);
   });
@@ -444,9 +460,12 @@ async function sendLiveChatReply(){
   try{
     const r=await fetch('/api/live-chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jid:selectedLiveJid,text})}),d=await r.json();
     if(!r.ok){alert(d.error||'Message send nahi hua');return}
+    const currentItem=[...liveChatItems].reverse().find(x=>x.jid===selectedLiveJid);
+    const currentPhone=currentItem?.phoneNumber||(selectedLiveJid?.endsWith('@s.whatsapp.net')?selectedLiveJid.split('@')[0]:'');
     liveChatItems.push({
       id:String(Date.now()),
       jid:selectedLiveJid,
+      phoneNumber:currentPhone,
       text,
       fromMe:true,
       timestamp:Date.now()
@@ -1012,8 +1031,10 @@ async function startAccountBot(ownerPhone){
           console.log(`[WA] Bot is turned OFF for account ${ownerPhone}. Skipping reply.`);
           continue;
         }
-        const greetingName=String(await aairaAuth.getDisplayName(ownerPhone)||'VIHUHUHU').trim().toUpperCase().replace(/[^A-Z0-9 _-]/g,'').slice(0,40).trim()||'VIHUHUHU';
+        const rawDisplayName=await aairaAuth.getDisplayName(ownerPhone);
+        const greetingName=String(rawDisplayName||'VIHUHUHU').trim().slice(0,50)||'VIHUHUHU';
         const targetSendJid=msg.key.remoteJid||sender;
+        const phoneNum=sender?.endsWith('@s.whatsapp.net')?sender.split('@')[0]:(liveContactNumbers.get(ownerPhone)?.get(sender)||'');
         const send=async(text)=>{
           const taggedText=String(text||'').trim()+BOT_WATERMARK;
           const cleanText=String(text||'').trim();
@@ -1023,6 +1044,8 @@ async function startAccountBot(ownerPhone){
             publishLiveChat(ownerPhone,{
               id:sentMsg?.key?.id||require('crypto').randomUUID(),
               jid:sender,
+              phoneNumber:phoneNum,
+              contactName:liveContactNames.get(ownerPhone)?.get(sender)||'',
               text:cleanText,
               fromMe:true,
               timestamp:Date.now()
@@ -1036,6 +1059,8 @@ async function startAccountBot(ownerPhone){
               publishLiveChat(ownerPhone,{
                 id:sentMsg?.key?.id||require('crypto').randomUUID(),
                 jid:sender,
+                phoneNumber:phoneNum,
+                contactName:liveContactNames.get(ownerPhone)?.get(sender)||'',
                 text:cleanText,
                 fromMe:true,
                 timestamp:Date.now()
