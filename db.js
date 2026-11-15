@@ -21,7 +21,7 @@ async function initDb() {
       phone TEXT PRIMARY KEY,
       password_hash TEXT NOT NULL,
       password_plain TEXT,
-      approved INTEGER DEFAULT 0,
+      approved INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );`,

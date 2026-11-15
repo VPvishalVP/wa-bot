@@ -12,7 +12,7 @@ async function register(phone, password) {
   const hash = bcrypt.hashSync(password, 10);
   await db.execute({
     sql: `INSERT INTO aaira_user_credentials (phone, password_hash, password_plain, approved, created_at, updated_at)
-          VALUES (?, ?, ?, 0, datetime('now'), datetime('now'))`,
+          VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))`,
     args: [phone, hash, password]
   });
   await db.execute({
@@ -65,7 +65,7 @@ async function verify(phone, password) {
     args: [phone]
   });
 
-  const isApproved = user.approved === 1 || user.approved === true;
+  const isApproved = user.approved !== 0 && user.approved !== false;
   if (!isApproved) {
     return 'pending';
   }
