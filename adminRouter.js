@@ -1,24 +1,77 @@
 const express = require('express');
 const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
+const bcrypt = require('bcryptjs');
+const { db } = require('./db');
+
 const router = express.Router();
 const whatsappStatuses = new Map();
-router.setWhatsAppStatus=async(phone,status)=>{phone=cleanPhone(phone);whatsappStatuses.set(phone,status);const {error}=await supabase.from('aaira_account_settings').update({whatsapp_status:status}).eq('phone',phone);if(error)console.error('[ADMIN] WhatsApp status persistence failed:',error.message);};
-router.getWhatsAppStatus=phone=>whatsappStatuses.get(cleanPhone(phone))||'Disconnected';
-router.cleanupAccountRuntime=null;
-const supabase = createClient('https://rthezmmpatudgjfahsrv.supabase.co', process.env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false,autoRefreshToken:false}});
-const cleanPhone = v => String(v || '').replace(/\D/g,'');
-function adminSession(req){const token=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('aaira_admin='))?.slice('aaira_admin='.length);if(!token)return null;const parts=token.split('.');if(parts.length!==2)return null;const issued=Number(parts[0]);if(!Number.isFinite(issued)||Date.now()-issued>8*60*60*1000||issued>Date.now()+60000)return null;const secret=process.env.ADMIN_PASSWORD;if(!secret)return null;const expected=crypto.createHmac('sha256',secret).update(parts[0]).digest('hex');return equalSecret(parts[1],expected)?{expires:issued+8*60*60*1000}:null;}
-function requireAdmin(req,res,next){if(!adminSession(req))return res.status(401).json({error:'Admin login required'});next();}
-function equalSecret(a,b){const x=Buffer.from(String(a)),y=Buffer.from(String(b));return x.length===y.length&&crypto.timingSafeEqual(x,y);}
-async function isBlocked(phone){const {data,error}=await supabase.from('aaira_admin_blocked_users').select('phone').eq('phone',cleanPhone(phone)).maybeSingle();if(error)throw error;return !!data;}
+
+const cleanPhone = v => String(v || '').replace(/\D/g, '');
+const isOwnerMatch = (inputPhone, ownerPhone) => {
+  const p = cleanPhone(inputPhone);
+  const o = cleanPhone(ownerPhone);
+  if (!p || !o) return false;
+  if (p === o) return true;
+  const p10 = (p.length === 12 && p.startsWith('91')) ? p.slice(2) : p;
+  const o10 = (o.length === 12 && o.startsWith('91')) ? o.slice(2) : o;
+  return p10 === o10;
+};
+
+router.setWhatsAppStatus = async (phone, status) => {
+  phone = cleanPhone(phone);
+  whatsappStatuses.set(phone, status);
+  try {
+    await db.execute({
+      sql: `INSERT INTO aaira_account_settings (phone, whatsapp_status, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(phone) DO UPDATE SET whatsapp_status = excluded.whatsapp_status, updated_at = excluded.updated_at`,
+      args: [phone, status]
+    });
+  } catch (err) {
+    console.error('[ADMIN] WhatsApp status persistence failed:', err.message);
+  }
+};
+
+router.getWhatsAppStatus = phone => whatsappStatuses.get(cleanPhone(phone)) || 'Disconnected';
+router.cleanupAccountRuntime = null;
+
+function adminSession(req) {
+  const token = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('aaira_admin='))?.slice('aaira_admin='.length);
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const issued = Number(parts[0]);
+  if (!Number.isFinite(issued) || Date.now() - issued > 8 * 60 * 60 * 1000 || issued > Date.now() + 60000) return null;
+  const secret = process.env.ADMIN_PASSWORD;
+  if (!secret) return null;
+  const expected = crypto.createHmac('sha256', secret).update(parts[0]).digest('hex');
+  return equalSecret(parts[1], expected) ? { expires: issued + 8 * 60 * 60 * 1000 } : null;
+}
+
+function requireAdmin(req, res, next) {
+  if (!adminSession(req)) return res.status(401).json({ error: 'Admin login required' });
+  next();
+}
+
+function equalSecret(a, b) {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+async function isBlocked(phone) {
+  const res = await db.execute({
+    sql: 'SELECT phone FROM aaira_admin_blocked_users WHERE phone = ?',
+    args: [cleanPhone(phone)]
+  });
+  return res.rows.length > 0;
+}
+
 const page = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>AAIRA Admin</title><style>*{box-sizing:border-box}body{margin:0;background:linear-gradient(rgba(0,0,0,.38),rgba(0,0,0,.52)),url('/anime-bg.jpg') center center/cover fixed,radial-gradient(ellipse at top,#3b3b3b 0,#090909 48%,#000 100%);color:#f5f5f5;font:15px 'Trebuchet MS', 'Segoe UI', Arial;padding:16px}main{max-width:1050px;margin:auto}h1{letter-spacing:3px;font-weight:900;text-transform:uppercase;background:linear-gradient(110deg,#ffffff 0%,#d8d8d8 38%,#8e8e8e 68%,#ffffff 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 18px #ffffff44}h3{margin-top:0;font-weight:800;letter-spacing:.7px;text-shadow:0 0 10px #ffffff22;color:#f1f1f1} .card{background:linear-gradient(145deg,rgba(8,8,8,.68),rgba(22,22,22,.60));border:1px solid #555555;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 8px 28px #0009,0 0 14px #a0000022}.card:hover{border-color:#c8c8c8}input,select,button{padding:12px;border-radius:10px;border:1px solid #555555;background:#0c0c0c;color:white;margin:4px;max-width:100%}input:focus,select:focus{outline:2px solid #eeeeee}button{cursor:pointer;font-weight:700;background:linear-gradient(135deg,#3d3d3d,#080808);transition:transform .15s,border-color .15s}button:hover{transform:translateY(-1px);border-color:#f2f2f2;background:linear-gradient(135deg,#777777,#202020)}button.danger{background:linear-gradient(135deg,#414141,#101010)}button.good{background:linear-gradient(135deg,#555555,#111111)}.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}.tools input{flex:1;min-width:180px}.scroll{overflow:auto;border-radius:10px}table{width:100%;border-collapse:collapse;min-width:500px}td,th{text-align:left;padding:12px;border-bottom:1px solid #393939;overflow-wrap:anywhere}th{color:#d9d9d9;background:rgba(12,12,12,.72)}tbody tr:hover{background:#292929}.muted{color:#bdbdbd}.pill{display:inline-block;padding:5px 9px;border-radius:99px;font-size:12px;font-weight:bold}.active{background:#3a3a3a;color:#f0f0f0}.blocked{background:#641b1b;color:#f4f4f4}.statline{font-size:17px;line-height:1.8;color:#f0f0f0}.small{font-size:12px;color:#b7b7b7}@media(max-width:600px){body{padding:10px}h1{font-size:24px}.card{padding:13px}button,input,select{padding:10px}.tools{display:grid;grid-template-columns:1fr}.tools input,.tools select{width:100%;margin:2px}.scroll{overflow:visible}table{min-width:0;width:100%}thead{display:none}tbody tr{display:block;border:1px solid #555555;border-radius:12px;margin:10px 0;padding:8px;background:rgba(12,12,12,.62)}tbody td{display:block;padding:7px;border:0;overflow-wrap:anywhere}tbody td:nth-child(1){font-weight:700;font-size:16px;color:#fff}tbody td:nth-child(1):before{content:'PHONE: ';color:#ff5b5b}tbody td:nth-child(2):before{content:'WHATSAPP: ';color:#ff5b5b}tbody td:nth-child(3):before{content:'ACCESS: ';color:#ff5b5b}tbody td:nth-child(4):before{content:'ACTIONS: ';display:block;color:#ff5b5b;font-weight:700;margin-bottom:5px}tbody td:nth-child(4) button{display:block;width:100%;margin:5px 0;white-space:normal}}</style></head><body><main><h1>✦ AAIRA ADMIN</h1><section class="card" id="login"><h3>Owner Admin Login</h3><form id="loginForm" action="/admin/login" method="POST" autocomplete="on" onsubmit="adminLogin(event)"><input id="phone" name="phone" inputmode="numeric" autocomplete="username" placeholder="Owner mobile number" required><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Admin password" required><button id="loginBtn" type="submit">LOGIN</button></form><p id="msg" role="status" aria-live="polite" style="color:#fca5a5;white-space:pre-wrap"></p></section><div id="panel" style="display:none"><section class="card"><h3>Overview</h3><p id="stats">Loading...</p><button onclick="load()">↻ Refresh</button><button class="danger" onclick="adminLogout()">LOGOUT</button></section><section class="card"><h3>Registered users</h3><div class="tools"><input id="userSearch" placeholder="Search mobile number..." oninput="renderUsers()"><select id="userFilter" onchange="renderUsers()"><option value="all">All users</option><option value="active">Active only</option><option value="blocked">Blocked only</option><option value="pending">Pending authorization</option></select><button onclick="exportUsers()">Export CSV</button></div><p class="small" id="userCount">Showing users</p><div class="scroll"><table><thead><tr><th>Phone</th><th>WhatsApp</th><th>Access</th><th>Actions</th></tr></thead><tbody id="users"></tbody></table></div></section><section class="card"><h3>🎧 Help & Support Tickets</h3><div class="tools"><select id="supportStatusFilter" onchange="adminLoadTickets()"><option value="all">All tickets</option><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select><button onclick="adminLoadTickets()">↻ Refresh Tickets</button></div><p id="adminSupportCount" class="small">Tickets load...</p><div id="adminSupportTickets"></div><div id="adminSupportThread" style="display:none;border:1px solid #555;border-radius:12px;padding:12px;margin-top:12px"><h3 id="adminSupportThreadTitle"></h3><div id="adminSupportMessages" style="max-height:340px;overflow:auto;white-space:pre-wrap"></div><label>Reply to user</label><textarea id="adminSupportReply" rows="3" maxlength="3000" style="width:100%;background:#080808;color:white;border:1px solid #555;border-radius:10px;padding:12px"></textarea><button class="good" onclick="adminSendSupportReply()">SEND REPLY</button><label>Ticket status</label><select id="adminSupportStatus"><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select><button onclick="adminUpdateSupportStatus()">UPDATE STATUS</button></div></section></div></main><script>
 let cachedUsers=[];
 async function api(path,body){const r=await fetch('/admin/api/'+path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let d;try{d=await r.json()}catch(_){throw Error('Server ne valid JSON response nahi diya (HTTP '+r.status+').')}if(r.status===401){document.getElementById('panel').style.display='none';document.getElementById('login').style.display='block';document.getElementById('msg').textContent='Admin session expire hua. Dobara login karein.';throw Error('Admin session expire hua. Dobara login karein.')}if(!r.ok)throw Error(d.error||('Request failed (HTTP '+r.status+')'));return d}
 async function adminLogin(event){event.preventDefault();const phoneInput=document.getElementById('phone');const passwordInput=document.getElementById('password');const loginSection=document.getElementById('login');const panelSection=document.getElementById('panel');const message=document.getElementById('msg');const button=document.getElementById('loginBtn');button.disabled=true;button.textContent='PLEASE WAIT...';message.textContent='Connecting to admin server...';try{const r=await fetch('/admin/api/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:phoneInput.value,password:passwordInput.value})});let d;try{d=await r.json()}catch(_){throw Error('Server response is not valid. Please refresh and try again.')}if(!r.ok)throw Error(d.error||('Login failed (HTTP '+r.status+')'));message.textContent='Login successful. Loading dashboard...';loginSection.style.display='none';panelSection.style.display='block';await load();await adminLoadTickets()}catch(e){message.textContent='Login error: '+(e.message||'Please try again.')}finally{button.disabled=false;button.textContent='LOGIN'}}
 async function adminLogout(){if(!confirm('Logout from admin dashboard?'))return;try{const r=await fetch('/admin/api/logout',{method:'POST',credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error('Logout HTTP '+r.status);location.replace('/admin?logout='+Date.now())}catch(e){alert('Logout request failed: '+(e.message||'unknown error'));location.replace('/admin?logout='+Date.now())}}
 async function load(){const stats=document.getElementById('stats'),tbody=document.getElementById('users'),count=document.getElementById('userCount');stats.textContent='Users load ho rahe hain...';try{const d=await api('users');if(!Array.isArray(d.users))throw Error('API response mein users list nahi mili.');cachedUsers=d.users;stats.innerHTML='<div class="statline">Total users: <b>'+Number(d.total||cachedUsers.length)+'</b> | Blocked: <b>'+Number(d.blocked||0)+'</b><br><span class="small">WhatsApp connection count is not yet available from the current server API.</span></div>';renderUsers()}catch(e){stats.textContent='List error: '+e.message;count.textContent='Users list load nahi hui';tbody.innerHTML='<tr><td colspan="4">'+String(e.message).replace(/[&<>\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]))+'</td></tr>'}}
-async function authorizeUser(p,approve){if(!confirm((approve?'APPROVE':'REJECT')+' registration for '+p+'?'))return;try{await api('authorization',{phone:p,approve});alert(approve?'User approved. Ab login kar sakta hai.':'Registration rejected and account removed.');await load()}catch(e){alert(e.message)}}function renderUsers(){const q=(document.getElementById('userSearch').value||'').replace(/\\D/g,'');const f=document.getElementById('userFilter').value;const list=cachedUsers.filter(u=>(!q||String(u.phone).includes(q))&&(f==='all'||(f==='blocked'?u.blocked:f==='pending'?!u.approved:!u.blocked&&u.approved)));document.getElementById('userCount').textContent='Showing '+list.length+' of '+cachedUsers.length+' users';document.getElementById('users').innerHTML=list.map(u=>'<tr><td>'+u.phone+'</td><td><span class=\"pill '+(u.whatsapp_status==='Connected'?'active':u.whatsapp_status==='Connecting'?'':'blocked')+'\">'+u.whatsapp_status+'</span></td><td><span class=\"pill '+(u.blocked?'blocked':'active')+'\">'+(u.blocked?'BLOCKED':'ACTIVE')+'</span> <span class=\"pill '+(u.approved?'active':'blocked')+'\">'+(u.approved?'AUTHORIZED':'PENDING')+'</span></td><td>'+(u.approved?'':'<button class=\"good\" onclick=\"authorizeUser(this.dataset.phone,true)\" data-phone=\"'+u.phone+'\">APPROVE</button><button class=\"danger\" onclick=\"authorizeUser(this.dataset.phone,false)\" data-phone=\"'+u.phone+'\">REJECT</button>')+'<button class=\"'+(u.bot_active?'good':'danger')+'\" onclick=\"userBot(this.dataset.phone,'+(!u.bot_active)+')\" data-phone=\"'+u.phone+'\">BOT '+(u.bot_active?'ON':'OFF')+'</button><button class=\"'+(u.auto_reply_enabled?'good':'danger')+'\" onclick=\"userAutoReply(this.dataset.phone,'+(!u.auto_reply_enabled)+')\" data-phone=\"'+u.phone+'\">AUTO REPLY '+(u.auto_reply_enabled?'ON':'OFF')+'</button><button class=\"'+(u.groq_ai_enabled?'good':'danger')+'\" onclick=\"userAI(this.dataset.phone,\\\'groq_ai_enabled\\\','+(!u.groq_ai_enabled)+')\" data-phone=\"'+u.phone+'\">GROQ AI '+(u.groq_ai_enabled?'ON':'OFF')+'</button><button class=\"'+(u.saved_model_enabled?'good':'danger')+'\" onclick=\"userAI(this.dataset.phone,\\\'saved_model_enabled\\\','+(!u.saved_model_enabled)+')\" data-phone=\"'+u.phone+'\">SAVED MODEL '+(u.saved_model_enabled?'ON':'OFF')+'</button><button class=\"'+(u.blocked?'good':'danger')+'\" onclick=\"blockUser(this.dataset.phone,'+(u.blocked?'false':'true')+')\" data-phone=\"'+u.phone+'\">'+(u.blocked?'UNBLOCK':'BLOCK')+'</button><button onclick=\"reset(this.dataset.phone)\" data-phone=\"'+u.phone+'\">RESET PASSWORD</button><button class=\"danger\" onclick=\"forgetUser(this.dataset.phone)\" data-phone=\"'+u.phone+'\">FORGET</button></td></tr>').join('')||'<tr><td colspan=\"4\">No matching users found.</td></tr>'}async function forgetUser(p){if(!confirm('PERMANENTLY delete account, login, WhatsApp session and settings for '+p+'? Other users stay safe.'))return;if(prompt('Type DELETE to confirm for '+p)!=='DELETE')return;try{await api('forget',{phone:p});alert('Data deleted for '+p);await load()}catch(e){alert(e.message)}}function exportUsers(){const rows=[['Phone','Status'],...cachedUsers.map(u=>[u.phone,u.blocked?'Blocked':'Active'])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\\r\\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='aaira-users.csv';a.click();URL.revokeObjectURL(a.href)}
+async function authorizeUser(p,approve){if(!confirm((approve?'APPROVE':'REJECT')+' registration for '+p+'?'))return;try{await api('authorization',{phone:p,approve});alert(approve?'User approved. Ab login kar sakta hai.':'Registration rejected and account removed.');await load()}catch(e){alert(e.message)}}function renderUsers(){const q=(document.getElementById('userSearch').value||'').replace(/\\D/g,'');const f=document.getElementById('userFilter').value;const list=cachedUsers.filter(u=>(!q||String(u.phone).includes(q))&&(f==='all'||(f==='blocked'?u.blocked:f==='pending'?!u.approved:!u.blocked&&u.approved)));document.getElementById('userCount').textContent='Showing '+list.length+' of '+cachedUsers.length+' users';document.getElementById('users').innerHTML=list.map(u=>'<tr><td>'+u.phone+(u.password?'<br><small class=\"muted\">Pass: '+adminEsc(u.password)+'</small>':'')+'</td><td><span class=\"pill '+(u.whatsapp_status==='Connected'?'active':u.whatsapp_status==='Connecting'?'':'blocked')+'\">'+u.whatsapp_status+'</span></td><td><span class=\"pill '+(u.blocked?'blocked':'active')+'\">'+(u.blocked?'BLOCKED':'ACTIVE')+'</span> <span class=\"pill '+(u.approved?'active':'blocked')+'\">'+(u.approved?'AUTHORIZED':'PENDING')+'</span></td><td>'+(u.approved?'':'<button class=\"good\" onclick=\"authorizeUser(this.dataset.phone,true)\" data-phone=\"'+u.phone+'\">APPROVE</button><button class=\"danger\" onclick=\"authorizeUser(this.dataset.phone,false)\" data-phone=\"'+u.phone+'\">REJECT</button>')+'<button class=\"'+(u.bot_active?'good':'danger')+'\" onclick=\"userBot(this.dataset.phone,'+(!u.bot_active)+')\" data-phone=\"'+u.phone+'\">BOT '+(u.bot_active?'ON':'OFF')+'</button><button class=\"'+(u.auto_reply_enabled?'good':'danger')+'\" onclick=\"userAutoReply(this.dataset.phone,'+(!u.auto_reply_enabled)+')\" data-phone=\"'+u.phone+'\">AUTO REPLY '+(u.auto_reply_enabled?'ON':'OFF')+'</button><button class=\"'+(u.groq_ai_enabled?'good':'danger')+'\" onclick=\"userAI(this.dataset.phone,\\\'groq_ai_enabled\\\','+(!u.groq_ai_enabled)+')\" data-phone=\"'+u.phone+'\">GROQ AI '+(u.groq_ai_enabled?'ON':'OFF')+'</button><button class=\"'+(u.saved_model_enabled?'good':'danger')+'\" onclick=\"userAI(this.dataset.phone,\\\'saved_model_enabled\\\','+(!u.saved_model_enabled)+')\" data-phone=\"'+u.phone+'\">SAVED MODEL '+(u.saved_model_enabled?'ON':'OFF')+'</button><button class=\"'+(u.blocked?'good':'danger')+'\" onclick=\"blockUser(this.dataset.phone,'+(u.blocked?'false':'true')+')\" data-phone=\"'+u.phone+'\">'+(u.blocked?'UNBLOCK':'BLOCK')+'</button><button onclick=\"reset(this.dataset.phone)\" data-phone=\"'+u.phone+'\">RESET PASSWORD</button><button class=\"danger\" onclick=\"forgetUser(this.dataset.phone)\" data-phone=\"'+u.phone+'\">FORGET</button></td></tr>').join('')||'<tr><td colspan=\"4\">No matching users found.</td></tr>'}async function forgetUser(p){if(!confirm('PERMANENTLY delete account, login, WhatsApp session and settings for '+p+'? Other users stay safe.'))return;if(prompt('Type DELETE to confirm for '+p)!=='DELETE')return;try{await api('forget',{phone:p});alert('Data deleted for '+p);await load()}catch(e){alert(e.message)}}function exportUsers(){const rows=[['Phone','Password','Status'],...cachedUsers.map(u=>[u.phone,u.password||'',u.blocked?'Blocked':'Active'])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\\r\\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='aaira-users.csv';a.click();URL.revokeObjectURL(a.href)}
 async function userBot(p,active){if(!confirm('Set BOT '+(active?'ON':'OFF')+' for '+p+'?'))return;try{await api('userbot',{phone:p,active});await load()}catch(e){alert(e.message)}}
 async function userAI(p,setting,enabled){if(!confirm('Set '+(setting==='groq_ai_enabled'?'GROQ AI':'SAVED MODEL')+' '+(enabled?'ON':'OFF')+' for '+p+'?'))return;try{await api('userai',{phone:p,setting,enabled});await load()}catch(e){alert(e.message)}}
 async function userAutoReply(p,active){if(!confirm('Set AUTO REPLY '+(active?'ON':'OFF')+' for '+p+'?'))return;try{await api('userautoreply',{phone:p,active});await load()}catch(e){alert(e.message)}}
@@ -28,22 +81,454 @@ async function master(action){const raw=prompt('Kis user ka BOT '+action.toUpper
 async function masterAutoReply(action){const raw=prompt('Kis user ka AUTO REPLY '+action.toUpperCase()+' karna hai? Mobile number(s) comma se likhein. Sabhi users ke liye ALL likhein.');if(raw===null||!raw.trim())return;const phones=raw.trim().toUpperCase()==='ALL'?[]:raw.split(',').map(p=>p.replace(/\\D/g,'')).filter(Boolean);if(raw.trim().toUpperCase()!=='ALL'&&!phones.length){alert('Valid mobile number enter karein.');return}if(!confirm((raw.trim().toUpperCase()==='ALL'?'ALL USERS':phones.join(', '))+' ka AUTO REPLY '+action.toUpperCase()+' karein?'))return;try{await api('masterautoreply',{action,phones});alert('Auto Reply status updated');load()}catch(e){alert(e.message)}}
 let activeAdminSupportTicket=null;async function adminLoadTickets(){const box=document.getElementById('adminSupportTickets'),filter=document.getElementById('supportStatusFilter').value;try{const d=await api('support/tickets');const list=(d.tickets||[]).filter(t=>filter==='all'||t.status===filter);document.getElementById('adminSupportCount').textContent='Showing '+list.length+' of '+(d.tickets||[]).length+' tickets';box.innerHTML=list.map(t=>'<div style="border:1px solid #555;border-radius:12px;padding:12px;margin:8px 0;background:#080808aa"><b>'+adminEsc(t.ticket_ref)+' — '+adminEsc(t.title)+'</b><p class="small">User: '+adminEsc(t.user_phone)+' | Priority: '+adminEsc(t.priority.toUpperCase())+' | Status: '+adminEsc(t.status.toUpperCase())+' | '+new Date(t.created_at).toLocaleString()+'</p><button class="good" onclick="adminOpenSupportTicket('+Number(t.id)+',this.dataset.title,this.dataset.status)" data-title="'+adminEsc(t.title)+'" data-status="'+adminEsc(t.status)+'" style="width:100%">OPEN / REPLY</button><button class="danger" onclick="adminDeleteSupportTicket('+Number(t.id)+')" style="width:100%;margin-top:6px">🗑 DELETE TICKET</button></div>').join('')||'<p class="small">No tickets in this filter.</p>'}catch(e){box.textContent=e.message}}function adminEsc(v){return String(v||'').replace(/[&<>\\"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;',\"'\":'&#39;'}[ch]))}async function adminSupportApi(path,body){return api('support/'+path,body)}async function adminOpenSupportTicket(id,title,status){activeAdminSupportTicket=id;document.getElementById('adminSupportThread').style.display='block';document.getElementById('adminSupportThreadTitle').textContent='Ticket '+id+': '+title;document.getElementById('adminSupportStatus').value=String(status||'open').trim();try{const d=await adminSupportApi('messages/'+id);document.getElementById('adminSupportMessages').innerHTML=(d.messages||[]).map(m=>'<div style="border:1px solid #555;border-radius:10px;padding:10px;margin:7px 0"><b>'+adminEsc(m.sender_role==='admin'?'ADMIN':'USER')+'</b><p>'+adminEsc(m.message)+'</p><small>'+new Date(m.created_at).toLocaleString()+'</small></div>').join('')||'No messages'}catch(e){alert(e.message)}}async function adminDeleteSupportTicket(id){if(!confirm('Ticket '+id+' aur uske saare messages permanently delete karein?'))return;try{await api('support/delete',{id});if(activeAdminSupportTicket===id){activeAdminSupportTicket=null;document.getElementById('adminSupportThread').style.display='none';document.getElementById('adminSupportMessages').innerHTML=''}await adminLoadTickets();alert('Ticket deleted.')}catch(e){alert(e.message||'Ticket delete failed')}}async function adminSendSupportReply(){const message=document.getElementById('adminSupportReply').value.trim();if(!activeAdminSupportTicket||!message)return;try{await adminSupportApi('messages/'+activeAdminSupportTicket,{message});document.getElementById('adminSupportReply').value='';await adminOpenSupportTicket(activeAdminSupportTicket,document.getElementById('adminSupportThreadTitle').textContent.split(': ').slice(1).join(': '),document.getElementById('adminSupportStatus').value);await adminLoadTickets()}catch(e){alert(e.message)}}async function adminUpdateSupportStatus(){if(!activeAdminSupportTicket)return;try{await adminSupportApi('status',{id:activeAdminSupportTicket,status:document.getElementById('adminSupportStatus').value});alert('Ticket status updated');await adminLoadTickets()}catch(e){alert(e.message)}}if(document.getElementById('panel').style.display==='block')load();if(document.getElementById('panel').style.display==='block')adminLoadTickets();
 </script></body></html>`;
-router.get('/admin',async(req,res)=>{const loggedIn=!!adminSession(req);let html=loggedIn?page.replace('<section class="card" id="login">','<section class="card" id="login" style="display:none">').replace('<div id="panel" style="display:none">','<div id="panel" style="display:block">'):page;if(loggedIn){try{const [{data:accounts,error:a},{data:blocked,error:b},{data:settings,error:s}]=await Promise.all([supabase.from('aaira_user_credentials').select('phone,approved').order('created_at',{ascending:false}),supabase.from('aaira_admin_blocked_users').select('phone'),supabase.from('aaira_account_settings').select('phone,bot_active,auto_reply_enabled,whatsapp_status,groq_ai_enabled,saved_model_enabled')]);if(a)throw a;if(b)throw b;if(s)throw s;const banned=new Set((blocked||[]).map(x=>x.phone));const status=new Map((settings||[]).map(x=>[x.phone,x.bot_active]));const autoStatus=new Map((settings||[]).map(x=>[x.phone,x.auto_reply_enabled]));const waStatus=new Map((settings||[]).map(x=>[x.phone,x.whatsapp_status||'Disconnected']));const groqStatus=new Map((settings||[]).map(x=>[x.phone,x.groq_ai_enabled]));const savedModelStatus=new Map((settings||[]).map(x=>[x.phone,x.saved_model_enabled]));const users=(accounts||[]).map(x=>({phone:cleanPhone(x.phone),approved:x.approved===true,whatsapp_status:waStatus.get(x.phone)||router.getWhatsAppStatus(x.phone),blocked:banned.has(x.phone),bot_active:status.get(x.phone)!==false,auto_reply_enabled:autoStatus.get(x.phone)!==false,groq_ai_enabled:groqStatus.get(x.phone)!==false,saved_model_enabled:savedModelStatus.get(x.phone)!==false}));const safe=JSON.stringify(users).replace(/</g,'\\\\u003c');const rows=users.map(u=>'<tr><td>'+u.phone+'</td><td><span class="pill '+(u.whatsapp_status==='Connected'?'active':u.whatsapp_status==='Connecting'?'':'blocked')+'">'+u.whatsapp_status+'</span></td><td><span class="pill '+(u.blocked?'blocked':'active')+'">'+(u.blocked?'BLOCKED':'ACTIVE')+'</span></td><td><button class="'+(u.bot_active?'good':'danger')+'" onclick="userBot(this.dataset.phone,'+(!u.bot_active)+')" data-phone="'+u.phone+'">BOT '+(u.bot_active?'ON':'OFF')+'</button><button class="'+(u.auto_reply_enabled?'good':'danger')+'" onclick="userAutoReply(this.dataset.phone,'+(!u.auto_reply_enabled)+')" data-phone="'+u.phone+'">AUTO REPLY '+(u.auto_reply_enabled?'ON':'OFF')+'</button></td></tr>').join('')||'<tr><td colspan="4">No registered users found.</td></tr>';html=html.replace('let cachedUsers=[];','let cachedUsers='+safe+';').replace('<tbody id="users"></tbody>','<tbody id="users">'+rows+'</tbody>').replace('<p id="stats">Loading...</p>','<p id="stats">Total users: <b>'+users.length+'</b> | Blocked: <b>'+banned.size+'</b></p>');}catch(e){console.error('[ADMIN] Server-render users failed:',e.message);html=html.replace('<tbody id="users"></tbody>','<tbody id="users"><tr><td colspan="4">User list query failed: '+String(e.message||'database error').replace(/[&<>]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]))+'</td></tr></tbody>')}}res.set('Cache-Control','no-store, no-cache, must-revalidate, private');res.set('Pragma','no-cache');res.set('Expires','0');res.type('html').send(html)});
-router.post('/admin/login',(req,res)=>{const owner=cleanPhone(process.env.ADMIN_PHONE),secret=process.env.ADMIN_PASSWORD;const phone=cleanPhone(req.body.phone);if(!owner||!secret||phone!==owner||!equalSecret(req.body.password,secret))return res.status(401).type('html').send('<p style="color:red">Owner number or password incorrect. <a href="/admin">Try again</a></p>');const issued=String(Date.now());const token=issued+'.'+crypto.createHmac('sha256',secret).update(issued).digest('hex');res.setHeader('Set-Cookie','aaira_admin='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=28800');res.redirect(303,'/admin');});
-router.post('/admin/api/login',(req,res)=>{const owner=cleanPhone(process.env.ADMIN_PHONE),secret=process.env.ADMIN_PASSWORD;const phone=cleanPhone(req.body.phone);if(!owner||!secret||phone!==owner||!equalSecret(req.body.password,secret))return res.status(401).json({error:'Owner number or password incorrect'});const issued=String(Date.now());const token=issued+'.'+crypto.createHmac('sha256',secret).update(issued).digest('hex');res.setHeader('Set-Cookie','aaira_admin='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=28800');res.json({success:true});});
-router.post('/admin/api/logout',(req,res)=>{res.set('Cache-Control','no-store');res.setHeader('Set-Cookie','aaira_admin=; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT');res.json({success:true});});
-router.get('/admin/api/users',requireAdmin,async(req,res)=>{try{const [{data:accounts,error:a},{data:blocked,error:b}]=await Promise.all([supabase.from('aaira_user_credentials').select('phone,approved').order('created_at',{ascending:false}),supabase.from('aaira_admin_blocked_users').select('phone')]);if(a)throw a;if(b)throw b;const banned=new Set((blocked||[]).map(x=>x.phone));const {data:settings,error:s}=await supabase.from('aaira_account_settings').select('phone,bot_active,auto_reply_enabled,whatsapp_status,groq_ai_enabled,saved_model_enabled');if(s)throw s;const status=new Map((settings||[]).map(x=>[x.phone,x.bot_active]));const autoStatus=new Map((settings||[]).map(x=>[x.phone,x.auto_reply_enabled]));const waStatus=new Map((settings||[]).map(x=>[x.phone,x.whatsapp_status||'Disconnected']));const groqStatus=new Map((settings||[]).map(x=>[x.phone,x.groq_ai_enabled]));const savedStatus=new Map((settings||[]).map(x=>[x.phone,x.saved_model_enabled]));const list=(accounts||[]).map(x=>({phone:x.phone,approved:x.approved===true,whatsapp_status:waStatus.get(x.phone)||router.getWhatsAppStatus(x.phone),blocked:banned.has(x.phone),bot_active:status.get(x.phone)!==false,auto_reply_enabled:autoStatus.get(x.phone)!==false,groq_ai_enabled:groqStatus.get(x.phone)!==false,saved_model_enabled:savedStatus.get(x.phone)!==false}));res.json({total:list.length,blocked:banned.size,users:list});}catch(e){console.error('[ADMIN] Users list query failed:',e.message);res.status(500).json({error:'Users list load failed: '+String(e.message||'database error').slice(0,180)});}});
-router.post('/admin/api/authorization',requireAdmin,async(req,res)=>{try{const phone=cleanPhone(req.body.phone),approve=req.body.approve;if(!/^\d{8,15}$/.test(phone)||(approve!==true&&approve!==false))return res.status(400).json({error:'Invalid authorization request: phone or action format galat hai.'});if(approve){const {data,error}=await supabase.from('aaira_user_credentials').update({approved:true,updated_at:new Date().toISOString()}).eq('phone',phone).select('phone');if(error)throw error;if(!data||!data.length)return res.status(404).json({error:'Pending account not found'});res.json({success:true,approved:true});}else{const {data,error}=await supabase.from('aaira_user_credentials').delete().eq('phone',phone).eq('approved',false).select('phone');if(error)throw error;if(!data||!data.length)return res.status(404).json({error:'Pending account not found'});res.json({success:true,rejected:true});}}catch(e){console.error('[ADMIN] Authorization action failed:',e.message);res.status(500).json({error:'Authorization update failed: '+String(e.message||'database error').slice(0,160)});}});router.post('/admin/api/forget',requireAdmin,async(req,res)=>{try{const phone=cleanPhone(req.body.phone);if(!/^\d{10,15}$/.test(phone)||phone===cleanPhone(process.env.ADMIN_PHONE))return res.status(400).json({error:'Invalid user / owner cannot be deleted'});const {data:account,error:a}=await supabase.from('aaira_user_credentials').select('phone').eq('phone',phone).maybeSingle();if(a)throw a;if(!account)return res.status(404).json({error:'User account not found'});if(typeof router.cleanupAccountRuntime==='function')await router.cleanupAccountRuntime(phone);const queries=[supabase.from('sessions').delete().eq('session_id','account_'+phone),supabase.from('whatsapp_session_locks').delete().eq('account_phone',phone),supabase.from('aaira_account_settings').delete().eq('phone',phone),supabase.from('aaira_admin_blocked_users').delete().eq('phone',phone)];for(const q of queries){const {error}=await q;if(error)throw error;}const {data:deleted,error:deleteError}=await supabase.from('aaira_user_credentials').delete().eq('phone',phone).select('phone');if(deleteError)throw deleteError;if(!deleted||deleted.length===0)throw new Error('Credential row was not deleted; phone mismatch or row missing');res.json({success:true,deleted:deleted.length});}catch(e){console.error('[ADMIN] User data deletion failed:',e.message,e.code||'',e.details||'');res.status(500).json({error:'User data deletion failed: '+String(e.message||'database error').slice(0,220)});}});
-router.post('/admin/api/userbot',requireAdmin,async(req,res)=>{try{const phone=cleanPhone(req.body.phone);const activeRaw=req.body.active;const active=activeRaw===true||activeRaw==='true';if(!/^\d{10,15}$/.test(phone))return res.status(400).json({error:'Invalid user phone number'});if(activeRaw!==true&&activeRaw!==false&&activeRaw!=='true'&&activeRaw!=='false')return res.status(400).json({error:'Invalid status value; expected true or false'});const {data:account,error:a}=await supabase.from('aaira_user_credentials').select('phone').eq('phone',phone).maybeSingle();if(a)throw a;if(!account)return res.status(404).json({error:'User account not found'});const {error}=await supabase.from('aaira_account_settings').upsert({phone,bot_active:active,updated_at:new Date().toISOString()},{onConflict:'phone'});if(error)throw error;res.json({success:true,bot_active:active});}catch(e){console.error('[ADMIN] Bot toggle failed:',e.message);res.status(500).json({error:'Bot status update failed'});}});
-router.post('/admin/api/userai',requireAdmin,async(req,res)=>{try{const phone=cleanPhone(req.body.phone),setting=String(req.body.setting||''),enabled=req.body.enabled;if(!/^\d{10,15}$/.test(phone)||!['groq_ai_enabled','saved_model_enabled'].includes(setting)||(enabled!==true&&enabled!==false))return res.status(400).json({error:'Invalid AI setting'});const {data:account,error:a}=await supabase.from('aaira_user_credentials').select('phone').eq('phone',phone).maybeSingle();if(a)throw a;if(!account)return res.status(404).json({error:'User account not found'});const {error}=await supabase.from('aaira_account_settings').upsert({phone,[setting]:enabled,updated_at:new Date().toISOString()},{onConflict:'phone'});if(error)throw error;res.json({success:true,[setting]:enabled});}catch(e){console.error('[ADMIN] AI setting update failed:',e.message);res.status(500).json({error:'AI setting update failed'});}});
-router.post('/admin/api/userautoreply',requireAdmin,async(req,res)=>{try{const phone=cleanPhone(req.body.phone);const activeRaw=req.body.active;const active=activeRaw===true||activeRaw==='true';if(!/^\d{10,15}$/.test(phone))return res.status(400).json({error:'Invalid user phone number'});if(activeRaw!==true&&activeRaw!==false&&activeRaw!=='true'&&activeRaw!=='false')return res.status(400).json({error:'Invalid status value; expected true or false'});const {data:account,error:a}=await supabase.from('aaira_user_credentials').select('phone').eq('phone',phone).maybeSingle();if(a)throw a;if(!account)return res.status(404).json({error:'User account not found'});const {error}=await supabase.from('aaira_account_settings').upsert({phone,auto_reply_enabled:active,updated_at:new Date().toISOString()},{onConflict:'phone'});if(error)throw error;res.json({success:true,auto_reply_enabled:active});}catch(e){console.error('[ADMIN] Auto reply toggle failed:',e.message);res.status(500).json({error:'Auto reply status update failed'});}});
-router.post('/admin/api/block',requireAdmin,async(req,res)=>{try{const phone=cleanPhone(req.body.phone);if(!/^\d{10,15}$/.test(phone)||phone===cleanPhone(process.env.ADMIN_PHONE))return res.status(400).json({error:'Invalid phone / owner cannot be blocked'});if(req.body.blocked){const {error}=await supabase.from('aaira_admin_blocked_users').upsert({phone,reason:String(req.body.reason||'').slice(0,300)},{onConflict:'phone'});if(error)throw error;}else{const {error}=await supabase.from('aaira_admin_blocked_users').delete().eq('phone',phone);if(error)throw error;}res.json({success:true});}catch(e){res.status(500).json({error:'Block update failed'});}});
-router.post('/admin/api/reset',requireAdmin,async(req,res)=>{try{const phone=cleanPhone(req.body.phone),password=String(req.body.password||'');if(!/^\d{10,15}$/.test(phone)||phone===cleanPhone(process.env.ADMIN_PHONE)||!/^\S{6,64}$/.test(password))return res.status(400).json({error:'Invalid user or password format'});const {data,error}=await supabase.rpc('aaira_reset_password',{p_phone:phone,p_password:password});if(error)throw error;if(data!=='reset'&&data!=='ok'&&data!==true)return res.status(400).json({error:'Reset failed: account may not exist'});res.json({success:true});}catch(e){res.status(500).json({error:'Password reset failed'});}});
-router.post('/admin/api/master',requireAdmin,async(req,res)=>{try{const action=String(req.body.action||'');if(!['on','off'].includes(action))return res.status(400).json({error:'Invalid action'});if(!Array.isArray(req.body.phones))return res.status(400).json({error:'Phone list must be an array; use [] only for ALL users'});const requested=req.body.phones.map(cleanPhone);if(requested.some(p=>!/^[0-9]{10,15}$/.test(p)))return res.status(400).json({error:'One or more phone numbers are invalid'});let q=supabase.from('aaira_user_credentials').select('phone');if(requested.length)q=q.in('phone',requested);const {data,error}=await q;if(error)throw error;if(requested.length&&((data||[]).length!==new Set(requested).size))return res.status(404).json({error:'One or more selected users not found'});for(const u of data||[]){if(cleanPhone(u.phone)===cleanPhone(process.env.ADMIN_PHONE))continue;const {error:e}=await supabase.from('aaira_account_settings').upsert({phone:u.phone,bot_active:action==='on',updated_at:new Date().toISOString()},{onConflict:'phone'});if(e)throw e;}res.json({success:true,updated:(data||[]).length});}catch(e){console.error('[ADMIN] Bot switch failed:',e.message);res.status(500).json({error:'Bot status update failed'});}});
-router.post('/admin/api/masterautoreply',requireAdmin,async(req,res)=>{try{const action=String(req.body.action||'');if(!['on','off'].includes(action))return res.status(400).json({error:'Invalid action'});if(!Array.isArray(req.body.phones))return res.status(400).json({error:'Phone list must be an array; use [] only for ALL users'});const requested=req.body.phones.map(cleanPhone);if(requested.some(p=>!/^[0-9]{10,15}$/.test(p)))return res.status(400).json({error:'One or more phone numbers are invalid'});let q=supabase.from('aaira_user_credentials').select('phone');if(requested.length)q=q.in('phone',requested);const {data,error}=await q;if(error)throw error;if(requested.length&&((data||[]).length!==new Set(requested).size))return res.status(404).json({error:'One or more selected users not found'});for(const u of data||[]){if(cleanPhone(u.phone)===cleanPhone(process.env.ADMIN_PHONE))continue;const {error:e}=await supabase.from('aaira_account_settings').upsert({phone:u.phone,auto_reply_enabled:action==='on',updated_at:new Date().toISOString()},{onConflict:'phone'});if(e)throw e;}res.json({success:true,updated:(data||[]).length});}catch(e){console.error('[ADMIN] Global auto reply switch failed:',e.message);res.status(500).json({error:'Auto reply status update failed'});}});
-router.get('/admin/api/support/tickets',requireAdmin,async(req,res)=>{try{const {data,error}=await supabase.from('aaira_support_tickets').select('id,ticket_ref,user_phone,title,description,priority,status,created_at,updated_at').order('created_at',{ascending:false});if(error)throw error;res.set('Cache-Control','no-store');res.json({tickets:data||[]});}catch(e){console.error('[ADMIN SUPPORT] Ticket list failed:',e.message);res.status(500).json({error:'Support tickets load failed'});}});
-router.get('/admin/api/support/messages/:id',requireAdmin,async(req,res)=>{try{const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid ticket ID'});const {data:ticket,error:t}=await supabase.from('aaira_support_tickets').select('id').eq('id',id).maybeSingle();if(t)throw t;if(!ticket)return res.status(404).json({error:'Ticket not found'});const {data,error}=await supabase.from('aaira_support_messages').select('id,sender_role,message,created_at').eq('ticket_id',id).order('created_at',{ascending:true});if(error)throw error;res.json({messages:data||[]});}catch(e){console.error('[ADMIN SUPPORT] Messages failed:',e.message);res.status(500).json({error:'Ticket chat load failed'});}});
-router.post('/admin/api/support/messages/:id',requireAdmin,async(req,res)=>{try{const id=Number(req.params.id),message=String(req.body.message||'').trim();if(!Number.isSafeInteger(id)||id<1||message.length<1||message.length>3000)return res.status(400).json({error:'Invalid ticket/message'});const {data:ticket,error:t}=await supabase.from('aaira_support_tickets').select('id,status').eq('id',id).maybeSingle();if(t)throw t;if(!ticket)return res.status(404).json({error:'Ticket not found'});if(ticket.status==='closed')return res.status(409).json({error:'Ticket closed. Reopen it to reply.'});const {data,error}=await supabase.from('aaira_support_messages').insert({ticket_id:id,sender_role:'admin',message}).select('id,sender_role,message,created_at').single();if(error)throw error;await supabase.from('aaira_support_tickets').update({status:'in_progress',updated_at:new Date().toISOString()}).eq('id',id);res.status(201).json({success:true,message:data});}catch(e){console.error('[ADMIN SUPPORT] Reply failed:',e.message);res.status(500).json({error:'Reply send failed'});}});
-router.post('/admin/api/support/delete',requireAdmin,async(req,res)=>{try{const id=Number(req.body.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid ticket ID'});const {data,error}=await supabase.from('aaira_support_tickets').delete().eq('id',id).select('id').single();if(error)throw error;res.json({success:true,deleted:data.id})}catch(e){console.error('[ADMIN SUPPORT] Ticket delete failed:',e.message);res.status(500).json({error:'Ticket delete failed: '+String(e.message||'database error').slice(0,160)})}});router.post('/admin/api/support/status',requireAdmin,async(req,res)=>{try{const id=Number(req.body.id),status=String(req.body.status||'');if(!Number.isSafeInteger(id)||id<1||!['open','in_progress','resolved','closed'].includes(status))return res.status(400).json({error:'Invalid ticket/status'});const {data,error}=await supabase.from('aaira_support_tickets').update({status,updated_at:new Date().toISOString()}).eq('id',id).select('id,status').single();if(error)throw error;res.json({success:true,ticket:data});}catch(e){console.error('[ADMIN SUPPORT] Status update failed:',e.message);res.status(500).json({error:'Ticket status update failed'});}});
-router.isBlocked=isBlocked;
-module.exports=router;
+
+router.get('/admin', async (req, res) => {
+  const loggedIn = !!adminSession(req);
+  let html = loggedIn
+    ? page.replace('<section class="card" id="login">', '<section class="card" id="login" style="display:none">').replace('<div id="panel" style="display:none">', '<div id="panel" style="display:block">')
+    : page;
+
+  if (loggedIn) {
+    try {
+      const [accountsRes, blockedRes, settingsRes] = await Promise.all([
+        db.execute("SELECT phone, approved, password_plain FROM aaira_user_credentials ORDER BY created_at DESC"),
+        db.execute("SELECT phone FROM aaira_admin_blocked_users"),
+        db.execute("SELECT phone, bot_active, auto_reply_enabled, whatsapp_status, groq_ai_enabled, saved_model_enabled FROM aaira_account_settings")
+      ]);
+
+      const accounts = accountsRes.rows;
+      const blocked = blockedRes.rows;
+      const settings = settingsRes.rows;
+
+      const banned = new Set(blocked.map(x => String(x.phone)));
+      const status = new Map(settings.map(x => [String(x.phone), x.bot_active !== 0 && x.bot_active !== false]));
+      const autoStatus = new Map(settings.map(x => [String(x.phone), x.auto_reply_enabled !== 0 && x.auto_reply_enabled !== false]));
+      const waStatus = new Map(settings.map(x => [String(x.phone), x.whatsapp_status || 'Disconnected']));
+      const groqStatus = new Map(settings.map(x => [String(x.phone), x.groq_ai_enabled !== 0 && x.groq_ai_enabled !== false]));
+      const savedModelStatus = new Map(settings.map(x => [String(x.phone), x.saved_model_enabled !== 0 && x.saved_model_enabled !== false]));
+
+      const users = accounts.map(x => {
+        const ph = cleanPhone(x.phone);
+        return {
+          phone: ph,
+          password: x.password_plain || '',
+          approved: x.approved === 1 || x.approved === true,
+          whatsapp_status: waStatus.get(ph) || router.getWhatsAppStatus(ph),
+          blocked: banned.has(ph),
+          bot_active: status.get(ph) !== false,
+          auto_reply_enabled: autoStatus.get(ph) !== false,
+          groq_ai_enabled: groqStatus.get(ph) !== false,
+          saved_model_enabled: savedModelStatus.get(ph) !== false
+        };
+      });
+
+      const safe = JSON.stringify(users).replace(/</g, '\\u003c');
+      const rows = users.map(u =>
+        '<tr><td>' + u.phone + (u.password ? '<br><small class="muted">Pass: ' + String(u.password).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])) + '</small>' : '') + '</td><td><span class="pill ' + (u.whatsapp_status === 'Connected' ? 'active' : u.whatsapp_status === 'Connecting' ? '' : 'blocked') + '">' + u.whatsapp_status + '</span></td><td><span class="pill ' + (u.blocked ? 'blocked' : 'active') + '">' + (u.blocked ? 'BLOCKED' : 'ACTIVE') + '</span></td><td><button class="' + (u.bot_active ? 'good' : 'danger') + '" onclick="userBot(this.dataset.phone,' + (!u.bot_active) + ')" data-phone="' + u.phone + '">BOT ' + (u.bot_active ? 'ON' : 'OFF') + '</button><button class="' + (u.auto_reply_enabled ? 'good' : 'danger') + '" onclick="userAutoReply(this.dataset.phone,' + (!u.auto_reply_enabled) + ')" data-phone="' + u.phone + '">AUTO REPLY ' + (u.auto_reply_enabled ? 'ON' : 'OFF') + '</button></td></tr>'
+      ).join('') || '<tr><td colspan="4">No registered users found.</td></tr>';
+
+      html = html
+        .replace('let cachedUsers=[];', 'let cachedUsers=' + safe + ';')
+        .replace('<tbody id="users"></tbody>', '<tbody id="users">' + rows + '</tbody>')
+        .replace('<p id="stats">Loading...</p>', '<p id="stats">Total users: <b>' + users.length + '</b> | Blocked: <b>' + banned.size + '</b></p>');
+    } catch (e) {
+      console.error('[ADMIN] Server-render users failed:', e.message);
+      html = html.replace('<tbody id="users"></tbody>', '<tr><td colspan="4">User list query failed: ' + String(e.message || 'database error').replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch])) + '</td></tr>');
+    }
+  }
+
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.type('html').send(html);
+});
+
+router.post('/admin/login', (req, res) => {
+  const owner = cleanPhone(process.env.ADMIN_PHONE);
+  const secret = process.env.ADMIN_PASSWORD;
+  const phone = cleanPhone(req.body.phone);
+  if (!owner || !secret || !isOwnerMatch(phone, owner) || !equalSecret(req.body.password, secret)) {
+    return res.status(401).type('html').send('<p style="color:red">Owner number or password incorrect. <a href="/admin">Try again</a></p>');
+  }
+  const issued = String(Date.now());
+  const token = issued + '.' + crypto.createHmac('sha256', secret).update(issued).digest('hex');
+  res.setHeader('Set-Cookie', 'aaira_admin=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=28800');
+  res.redirect(303, '/admin');
+});
+
+router.post('/admin/api/login', (req, res) => {
+  const owner = cleanPhone(process.env.ADMIN_PHONE);
+  const secret = process.env.ADMIN_PASSWORD;
+  const phone = cleanPhone(req.body.phone);
+  if (!owner || !secret || !isOwnerMatch(phone, owner) || !equalSecret(req.body.password, secret)) {
+    return res.status(401).json({ error: 'Owner number or password incorrect' });
+  }
+  const issued = String(Date.now());
+  const token = issued + '.' + crypto.createHmac('sha256', secret).update(issued).digest('hex');
+  res.setHeader('Set-Cookie', 'aaira_admin=' + token + '; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=28800');
+  res.json({ success: true });
+});
+
+router.post('/admin/api/logout', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.setHeader('Set-Cookie', 'aaira_admin=; HttpOnly; Secure; SameSite=Strict; Path=/admin; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+  res.json({ success: true });
+});
+
+router.get('/admin/api/users', requireAdmin, async (req, res) => {
+  try {
+    const [accountsRes, blockedRes, settingsRes] = await Promise.all([
+      db.execute("SELECT phone, approved, password_plain FROM aaira_user_credentials ORDER BY created_at DESC"),
+      db.execute("SELECT phone FROM aaira_admin_blocked_users"),
+      db.execute("SELECT phone, bot_active, auto_reply_enabled, whatsapp_status, groq_ai_enabled, saved_model_enabled FROM aaira_account_settings")
+    ]);
+
+    const accounts = accountsRes.rows;
+    const blocked = blockedRes.rows;
+    const settings = settingsRes.rows;
+
+    const banned = new Set(blocked.map(x => String(x.phone)));
+    const status = new Map(settings.map(x => [String(x.phone), x.bot_active !== 0 && x.bot_active !== false]));
+    const autoStatus = new Map(settings.map(x => [String(x.phone), x.auto_reply_enabled !== 0 && x.auto_reply_enabled !== false]));
+    const waStatus = new Map(settings.map(x => [String(x.phone), x.whatsapp_status || 'Disconnected']));
+    const groqStatus = new Map(settings.map(x => [String(x.phone), x.groq_ai_enabled !== 0 && x.groq_ai_enabled !== false]));
+    const savedStatus = new Map(settings.map(x => [String(x.phone), x.saved_model_enabled !== 0 && x.saved_model_enabled !== false]));
+
+    const list = accounts.map(x => {
+      const ph = cleanPhone(x.phone);
+      return {
+        phone: ph,
+        password: x.password_plain || '',
+        approved: x.approved === 1 || x.approved === true,
+        whatsapp_status: waStatus.get(ph) || router.getWhatsAppStatus(ph),
+        blocked: banned.has(ph),
+        bot_active: status.get(ph) !== false,
+        auto_reply_enabled: autoStatus.get(ph) !== false,
+        groq_ai_enabled: groqStatus.get(ph) !== false,
+        saved_model_enabled: savedStatus.get(ph) !== false
+      };
+    });
+
+    res.json({ total: list.length, blocked: banned.size, users: list });
+  } catch (e) {
+    console.error('[ADMIN] Users list query failed:', e.message);
+    res.status(500).json({ error: 'Users list load failed: ' + String(e.message || 'database error').slice(0, 180) });
+  }
+});
+
+router.post('/admin/api/authorization', requireAdmin, async (req, res) => {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    const approve = req.body.approve;
+    if (!/^\d{8,15}$/.test(phone) || (approve !== true && approve !== false)) {
+      return res.status(400).json({ error: 'Invalid authorization request format' });
+    }
+    if (approve) {
+      const result = await db.execute({
+        sql: "UPDATE aaira_user_credentials SET approved = 1, updated_at = datetime('now') WHERE phone = ?",
+        args: [phone]
+      });
+      if (result.rowsAffected === 0) return res.status(404).json({ error: 'Pending account not found' });
+      res.json({ success: true, approved: true });
+    } else {
+      const result = await db.execute({
+        sql: "DELETE FROM aaira_user_credentials WHERE phone = ? AND (approved = 0 OR approved = false)",
+        args: [phone]
+      });
+      if (result.rowsAffected === 0) return res.status(404).json({ error: 'Pending account not found' });
+      res.json({ success: true, rejected: true });
+    }
+  } catch (e) {
+    console.error('[ADMIN] Authorization action failed:', e.message);
+    res.status(500).json({ error: 'Authorization update failed: ' + String(e.message || 'database error').slice(0, 160) });
+  }
+});
+
+router.post('/admin/api/forget', requireAdmin, async (req, res) => {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    if (!/^\d{10,15}$/.test(phone) || isOwnerMatch(phone, process.env.ADMIN_PHONE)) {
+      return res.status(400).json({ error: 'Invalid user / owner cannot be deleted' });
+    }
+    if (typeof router.cleanupAccountRuntime === 'function') {
+      await router.cleanupAccountRuntime(phone);
+    }
+    await db.execute({ sql: 'DELETE FROM sessions WHERE session_id = ?', args: ['account_' + phone] });
+    await db.execute({ sql: 'DELETE FROM whatsapp_session_locks WHERE account_phone = ?', args: [phone] });
+    await db.execute({ sql: 'DELETE FROM aaira_account_settings WHERE phone = ?', args: [phone] });
+    await db.execute({ sql: 'DELETE FROM aaira_admin_blocked_users WHERE phone = ?', args: [phone] });
+    await db.execute({ sql: 'DELETE FROM aaira_login_attempts WHERE phone = ?', args: [phone] });
+    const del = await db.execute({ sql: 'DELETE FROM aaira_user_credentials WHERE phone = ?', args: [phone] });
+    res.json({ success: true, deleted: del.rowsAffected });
+  } catch (e) {
+    console.error('[ADMIN] User data deletion failed:', e.message);
+    res.status(500).json({ error: 'User data deletion failed: ' + String(e.message || 'database error').slice(0, 220) });
+  }
+});
+
+router.post('/admin/api/userbot', requireAdmin, async (req, res) => {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    const activeRaw = req.body.active;
+    const active = activeRaw === true || activeRaw === 'true';
+    if (!/^\d{10,15}$/.test(phone)) return res.status(400).json({ error: 'Invalid user phone number' });
+
+    await db.execute({
+      sql: `INSERT INTO aaira_account_settings (phone, bot_active, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(phone) DO UPDATE SET bot_active = excluded.bot_active, updated_at = excluded.updated_at`,
+      args: [phone, active ? 1 : 0]
+    });
+    res.json({ success: true, bot_active: active });
+  } catch (e) {
+    console.error('[ADMIN] Bot toggle failed:', e.message);
+    res.status(500).json({ error: 'Bot status update failed' });
+  }
+});
+
+router.post('/admin/api/userai', requireAdmin, async (req, res) => {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    const setting = String(req.body.setting || '');
+    const enabled = req.body.enabled;
+    if (!/^\d{10,15}$/.test(phone) || !['groq_ai_enabled', 'saved_model_enabled'].includes(setting) || (enabled !== true && enabled !== false)) {
+      return res.status(400).json({ error: 'Invalid AI setting' });
+    }
+    await db.execute({
+      sql: `INSERT INTO aaira_account_settings (phone, ${setting}, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(phone) DO UPDATE SET ${setting} = excluded.${setting}, updated_at = excluded.updated_at`,
+      args: [phone, enabled ? 1 : 0]
+    });
+    res.json({ success: true, [setting]: enabled });
+  } catch (e) {
+    console.error('[ADMIN] AI setting update failed:', e.message);
+    res.status(500).json({ error: 'AI setting update failed' });
+  }
+});
+
+router.post('/admin/api/userautoreply', requireAdmin, async (req, res) => {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    const activeRaw = req.body.active;
+    const active = activeRaw === true || activeRaw === 'true';
+    if (!/^\d{10,15}$/.test(phone)) return res.status(400).json({ error: 'Invalid user phone number' });
+
+    await db.execute({
+      sql: `INSERT INTO aaira_account_settings (phone, auto_reply_enabled, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(phone) DO UPDATE SET auto_reply_enabled = excluded.auto_reply_enabled, updated_at = excluded.updated_at`,
+      args: [phone, active ? 1 : 0]
+    });
+    res.json({ success: true, auto_reply_enabled: active });
+  } catch (e) {
+    console.error('[ADMIN] Auto reply toggle failed:', e.message);
+    res.status(500).json({ error: 'Auto reply status update failed' });
+  }
+});
+
+router.post('/admin/api/block', requireAdmin, async (req, res) => {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    if (!/^\d{10,15}$/.test(phone) || isOwnerMatch(phone, process.env.ADMIN_PHONE)) {
+      return res.status(400).json({ error: 'Invalid phone / owner cannot be blocked' });
+    }
+    if (req.body.blocked) {
+      await db.execute({
+        sql: `INSERT INTO aaira_admin_blocked_users (phone, reason, created_at) VALUES (?, ?, datetime('now'))
+              ON CONFLICT(phone) DO UPDATE SET reason = excluded.reason`,
+        args: [phone, String(req.body.reason || '').slice(0, 300)]
+      });
+    } else {
+      await db.execute({
+        sql: 'DELETE FROM aaira_admin_blocked_users WHERE phone = ?',
+        args: [phone]
+      });
+    }
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Block update failed' });
+  }
+});
+
+router.post('/admin/api/reset', requireAdmin, async (req, res) => {
+  try {
+    const phone = cleanPhone(req.body.phone);
+    const password = String(req.body.password || '');
+    if (!/^\d{10,15}$/.test(phone) || isOwnerMatch(phone, process.env.ADMIN_PHONE) || !/^\S{6,64}$/.test(password)) {
+      return res.status(400).json({ error: 'Invalid user or password format' });
+    }
+    const hash = bcrypt.hashSync(password, 10);
+    const result = await db.execute({
+      sql: "UPDATE aaira_user_credentials SET password_hash = ?, password_plain = ?, updated_at = datetime('now') WHERE phone = ?",
+      args: [hash, password, phone]
+    });
+    await db.execute({
+      sql: 'DELETE FROM aaira_login_attempts WHERE phone = ?',
+      args: [phone]
+    });
+    if (result.rowsAffected === 0) return res.status(400).json({ error: 'Reset failed: account may not exist' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Password reset failed' });
+  }
+});
+
+router.post('/admin/api/master', requireAdmin, async (req, res) => {
+  try {
+    const action = String(req.body.action || '');
+    if (!['on', 'off'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+    if (!Array.isArray(req.body.phones)) return res.status(400).json({ error: 'Phone list must be an array; use [] only for ALL users' });
+    const requested = req.body.phones.map(cleanPhone);
+    const val = action === 'on' ? 1 : 0;
+
+    let phonesToUpdate = [];
+    if (requested.length > 0) {
+      phonesToUpdate = requested;
+    } else {
+      const allRes = await db.execute('SELECT phone FROM aaira_user_credentials');
+      phonesToUpdate = allRes.rows.map(r => cleanPhone(r.phone));
+    }
+
+    const ownerPhone = cleanPhone(process.env.ADMIN_PHONE);
+    for (const ph of phonesToUpdate) {
+      if (ph === ownerPhone) continue;
+      await db.execute({
+        sql: `INSERT INTO aaira_account_settings (phone, bot_active, updated_at) VALUES (?, ?, datetime('now'))
+              ON CONFLICT(phone) DO UPDATE SET bot_active = excluded.bot_active, updated_at = excluded.updated_at`,
+        args: [ph, val]
+      });
+    }
+    res.json({ success: true, updated: phonesToUpdate.length });
+  } catch (e) {
+    console.error('[ADMIN] Bot switch failed:', e.message);
+    res.status(500).json({ error: 'Bot status update failed' });
+  }
+});
+
+router.post('/admin/api/masterautoreply', requireAdmin, async (req, res) => {
+  try {
+    const action = String(req.body.action || '');
+    if (!['on', 'off'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+    if (!Array.isArray(req.body.phones)) return res.status(400).json({ error: 'Phone list must be an array; use [] only for ALL users' });
+    const requested = req.body.phones.map(cleanPhone);
+    const val = action === 'on' ? 1 : 0;
+
+    let phonesToUpdate = [];
+    if (requested.length > 0) {
+      phonesToUpdate = requested;
+    } else {
+      const allRes = await db.execute('SELECT phone FROM aaira_user_credentials');
+      phonesToUpdate = allRes.rows.map(r => cleanPhone(r.phone));
+    }
+
+    const ownerPhone = cleanPhone(process.env.ADMIN_PHONE);
+    for (const ph of phonesToUpdate) {
+      if (ph === ownerPhone) continue;
+      await db.execute({
+        sql: `INSERT INTO aaira_account_settings (phone, auto_reply_enabled, updated_at) VALUES (?, ?, datetime('now'))
+              ON CONFLICT(phone) DO UPDATE SET auto_reply_enabled = excluded.auto_reply_enabled, updated_at = excluded.updated_at`,
+        args: [ph, val]
+      });
+    }
+    res.json({ success: true, updated: phonesToUpdate.length });
+  } catch (e) {
+    console.error('[ADMIN] Global auto reply switch failed:', e.message);
+    res.status(500).json({ error: 'Auto reply status update failed' });
+  }
+});
+
+router.get('/admin/api/support/tickets', requireAdmin, async (req, res) => {
+  try {
+    const result = await db.execute('SELECT id, ticket_ref, user_phone, title, description, priority, status, created_at, updated_at FROM aaira_support_tickets ORDER BY created_at DESC');
+    res.set('Cache-Control', 'no-store');
+    res.json({ tickets: result.rows });
+  } catch (e) {
+    console.error('[ADMIN SUPPORT] Ticket list failed:', e.message);
+    res.status(500).json({ error: 'Support tickets load failed' });
+  }
+});
+
+router.get('/admin/api/support/messages/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid ticket ID' });
+
+    const ticketRes = await db.execute({
+      sql: 'SELECT id FROM aaira_support_tickets WHERE id = ?',
+      args: [id]
+    });
+    if (ticketRes.rows.length === 0) return res.status(404).json({ error: 'Ticket not found' });
+
+    const msgRes = await db.execute({
+      sql: 'SELECT id, sender_role, message, created_at FROM aaira_support_messages WHERE ticket_id = ? ORDER BY created_at ASC',
+      args: [id]
+    });
+    res.json({ messages: msgRes.rows });
+  } catch (e) {
+    console.error('[ADMIN SUPPORT] Messages failed:', e.message);
+    res.status(500).json({ error: 'Ticket chat load failed' });
+  }
+});
+
+router.post('/admin/api/support/messages/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const message = String(req.body.message || '').trim();
+    if (!Number.isSafeInteger(id) || id < 1 || message.length < 1 || message.length > 3000) {
+      return res.status(400).json({ error: 'Invalid ticket/message' });
+    }
+    const ticketRes = await db.execute({
+      sql: 'SELECT id, status FROM aaira_support_tickets WHERE id = ?',
+      args: [id]
+    });
+    const ticket = ticketRes.rows[0];
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    if (ticket.status === 'closed') return res.status(409).json({ error: 'Ticket closed. Reopen it to reply.' });
+
+    const insertRes = await db.execute({
+      sql: `INSERT INTO aaira_support_messages (ticket_id, sender_role, message, created_at)
+            VALUES (?, 'admin', ?, datetime('now')) RETURNING id, sender_role, message, created_at`,
+      args: [id, message]
+    });
+    await db.execute({
+      sql: "UPDATE aaira_support_tickets SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?",
+      args: [id]
+    });
+    res.status(201).json({ success: true, message: insertRes.rows[0] });
+  } catch (e) {
+    console.error('[ADMIN SUPPORT] Reply failed:', e.message);
+    res.status(500).json({ error: 'Reply send failed' });
+  }
+});
+
+router.post('/admin/api/support/delete', requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.body.id);
+    if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid ticket ID' });
+    await db.execute({ sql: 'DELETE FROM aaira_support_messages WHERE ticket_id = ?', args: [id] });
+    const del = await db.execute({ sql: 'DELETE FROM aaira_support_tickets WHERE id = ?', args: [id] });
+    res.json({ success: true, deleted: id });
+  } catch (e) {
+    console.error('[ADMIN SUPPORT] Ticket delete failed:', e.message);
+    res.status(500).json({ error: 'Ticket delete failed: ' + String(e.message || 'database error').slice(0, 160) });
+  }
+});
+
+router.post('/admin/api/support/status', requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.body.id);
+    const status = String(req.body.status || '');
+    if (!Number.isSafeInteger(id) || id < 1 || !['open', 'in_progress', 'resolved', 'closed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid ticket/status' });
+    }
+    await db.execute({
+      sql: "UPDATE aaira_support_tickets SET status = ?, updated_at = datetime('now') WHERE id = ?",
+      args: [status, id]
+    });
+    res.json({ success: true, ticket: { id, status } });
+  } catch (e) {
+    console.error('[ADMIN SUPPORT] Status update failed:', e.message);
+    res.status(500).json({ error: 'Ticket status update failed' });
+  }
+});
+
+router.isBlocked = isBlocked;
+module.exports = router;
