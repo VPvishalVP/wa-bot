@@ -88,12 +88,8 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
   <div id="waIdentity" class="note" style="margin-top:12px;display:none;background:#111;padding:12px;border-radius:10px;border-left:3px solid #10b981"><b id="waProfileName" style="color:#6ee7b7"></b><div id="waProfileNumber" style="margin-top:4px"></div><div id="waDeviceName" style="margin-top:4px;color:#aaa"></div></div>
   <div class="status" style="margin-top:10px"><span>Bot Status</span><span id="bot" class="pill">Checking...</span></div>
   <div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
-  <div class="status" style="margin-top:10px"><span>Groq AI Smart Replies</span><span id="groqStatusPill" class="pill">Checking...</span></div>
-  <div class="status" style="margin-top:10px"><span>Saved Message (Offline Bank)</span><span id="savedModelStatusPill" class="pill">Checking...</span></div>
   <div class="row" style="margin-top:15px"><button type="button" onclick="toggleBot('on')">BOT ON</button><button type="button" onclick="toggleBot('off')">BOT OFF</button></div>
   <div class="row"><button type="button" onclick="toggleAuto('on')">AUTO-REPLY ON</button><button type="button" onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
-  <div class="row"><button type="button" onclick="toggleAI('groq','on')">GROQ AI ON</button><button type="button" onclick="toggleAI('groq','off')">GROQ AI OFF</button></div>
-  <div class="row"><button type="button" onclick="toggleAI('saved','on')">SAVED MESSAGE ON</button><button type="button" onclick="toggleAI('saved','off')">SAVED MESSAGE OFF</button></div>
   <div class="row" style="margin-top:10px">
     <button onclick="refreshStatus()" style="flex:1">↻ REFRESH STATUS</button>
     <button onclick="disconnectWhatsApp()" style="flex:1;background:rgba(50,15,15,0.7);border-color:#b91c1c;color:#fca5a5">🔌 DISCONNECT / UNLINK</button>
@@ -172,7 +168,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
   <pre>!ping  — Check bot reply
 !menu  — Show commands
 Welcome message — First message from each sender
-AAIRA AI assistant replies — Groq AI & Smart Model</pre>
+AAIRA AI assistant smart replies</pre>
   <p class="note">Dashboard theme: Gothic Dark • Black & White • Silver glow</p>
 </section>
 <footer>AAIRA • Gothic Dark Theme</footer>
@@ -250,16 +246,6 @@ async function refreshStatus(){
     document.getElementById('bot').className='pill '+(d.botActive?'green':'red');
     document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';
     document.getElementById('auto').className='pill '+(d.autoReplyEnabled?'green':'red');
-    const groqPill=document.getElementById('groqStatusPill');
-    if(groqPill){
-      groqPill.textContent=d.groqAIEnabled?'ON ✅':'OFF ❌';
-      groqPill.className='pill '+(d.groqAIEnabled?'green':'red');
-    }
-    const savedPill=document.getElementById('savedModelStatusPill');
-    if(savedPill){
-      savedPill.textContent=d.savedModelEnabled?'ON ✅':'OFF ❌';
-      savedPill.className='pill '+(d.savedModelEnabled?'green':'red');
-    }
     const identity=document.getElementById('waIdentity');
     if(isConn && (d.waProfileName || d.waPhoneNumber)){
       identity.style.display='block';
@@ -436,7 +422,6 @@ async function userLogout(){
 
 async function toggleBot(action){const r=await fetch('/toggle?action='+action);const d=await r.json();alert(d.message||d.botStatus);refreshStatus()}
 async function toggleAuto(action){const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus()}
-async function toggleAI(type,action){try{const r=await fetch('/toggle-ai?type='+type+'&action='+action);const d=await r.json();alert(d.message||d.error||'Updated');refreshStatus();}catch(e){alert('Failed: '+e.message);}}
 
 refreshStatus();loadDisplayName();
 
