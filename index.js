@@ -62,7 +62,8 @@ button:hover{background:#eee;color:#000;box-shadow:0 0 14px #aaa}
 button:disabled{opacity:.45;cursor:not-allowed}
 .row{display:flex;gap:10px;flex-wrap:wrap}.row button{flex:1}
 .code{font-size:30px;letter-spacing:6px;text-align:center;padding:16px;color:#6ee7b7;
-border:2px dashed #10b981;border-radius:14px;margin-top:14px;min-height:60px;background:#052e16}
+border:2px dashed #10b981;border-radius:14px;margin-top:14px;min-height:60px;background:#052e16;cursor:pointer;user-select:all;transition:all .2s}
+.code:hover{background:#064e26;border-color:#34d399;box-shadow:0 0 16px rgba(16,185,129,0.3)}
 .note{font-size:12px;color:#aaa;line-height:1.6}
 .chat-layout{display:grid;grid-template-columns:minmax(140px,34%) 1fr;gap:12px;min-height:360px}.chat-contacts,.chat-messages{border:1px solid #444;border-radius:12px;padding:10px;min-width:0}.chat-contacts{max-height:480px;overflow-y:auto;background:rgba(8,8,8,0.65)}.chat-messages{display:flex;flex-direction:column;gap:10px;max-height:480px;overflow-y:auto;background:rgba(5,5,5,0.75);padding:14px}.chat-contacts::-webkit-scrollbar,.chat-messages::-webkit-scrollbar{width:6px}.chat-contacts::-webkit-scrollbar-thumb,.chat-messages::-webkit-scrollbar-thumb{background:#444;border-radius:3px}.bubble{max-width:85%;padding:10px 14px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.45}.bubble.in{align-self:flex-start;background:#202c33;color:#e9edef;border:1px solid #374151;border-bottom-left-radius:2px}.bubble.out{align-self:flex-end;background:#005c4b;color:#f0fdf4;border:1px solid #059669;border-bottom-right-radius:2px}.bot-tag{font-size:11px;font-weight:bold;color:#6ee7b7;margin-bottom:4px;display:flex;align-items:center;gap:4px}.message-time{font-size:10px;color:#a7f3d0;text-align:right;margin-top:5px;white-space:nowrap}.chat-compose{display:flex;gap:8px;margin-top:12px}.chat-compose input{margin:0;flex:1;min-width:0}@media(max-width:640px){.chat-layout{grid-template-columns:1fr;min-height:auto}.chat-contacts{max-height:220px}.chat-messages{max-height:380px}}
 pre{white-space:pre-wrap;color:#ddd;font-size:13px}
@@ -71,7 +72,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </head>
 <body>
 <section id="welcomeGate" style="position:fixed;inset:0;z-index:100;background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.68)),url('/anime-bg.jpg') center center / cover no-repeat;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0;text-align:center"><div class="logo" style="font-size:30px;letter-spacing:3px">VIHUHUHU KA</div><h2 style="font-size:25px;margin:12px 0;text-shadow:0 0 14px #ddd">✦ AAIRA BOT ✦</h2><p class="note" style="font-size:14px">WELCOME TO AAIRA WHATSAPP BOT</p><a id="welcomeStartButton" href="#authGate" role="button" style="display:block;background:rgba(8,8,8,.58);color:#fff;border:1px solid #aaa;border-radius:10px;padding:12px 16px;margin:18px 4px 4px;cursor:pointer;font-weight:bold;text-decoration:none;font-size:16px;width:100%">✨ START / REGISTER</a></div></section>
-<section id="authGate" style="position:fixed;inset:0;z-index:99;background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.62)),url('/anime-bg.jpg') center center / cover no-repeat;display:none;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur password se login karein ya account banayein.</p><label>Mobile number (10 digit ya country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="8115743185 ya 918115743185"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button type="button" id="loginButton" onclick="window.authAction('login')">LOGIN</button><button type="button" id="registerButton" onclick="window.authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section>
+<section id="authGate" style="position:fixed;inset:0;z-index:99;background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.62)),url('/anime-bg.jpg') center center / cover no-repeat;display:none;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur password se login karein ya account banayein.</p><label>Mobile number (10 digit ya country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="0123456789 ya 910123456789"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button type="button" id="loginButton" onclick="window.authAction('login')">LOGIN</button><button type="button" id="registerButton" onclick="window.authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section>
 <div class="wrap">
 <header id="mainHeader">
   <div class="logo">AAIRA ✦</div>
@@ -104,20 +105,23 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
     <h2 style="margin-bottom:8px">📱 CONNECT / LINK WHATSAPP</h2>
     <p class="note" id="connectIntroNote" style="margin-bottom:12px">Apna WhatsApp number enter karein aur direct pairing code se WhatsApp connect karein.</p>
     <label for="waPhone">WhatsApp number (10-digit mobile number)</label>
-    <input id="waPhone" inputmode="numeric" placeholder="8115743185 ya 918115743185">
+    <input id="waPhone" inputmode="numeric" placeholder="0123456789 ya 910123456789">
     <div class="row">
       <button onclick="connectWhatsApp(false)" id="pairBtn" style="flex:1">🔗 GET PAIRING CODE</button>
       <button onclick="connectWhatsApp(true)" id="forcePairBtn" style="flex:1;background:rgba(45,15,15,0.7);border-color:#dc2626">🔄 RESET & RE-LINK</button>
     </div>
     <p id="pairMessage" class="note" style="margin-top:14px;font-size:13px;color:#f0f0f0"></p>
-    <div id="pairCode" class="code" style="display:none"></div>
+    <div id="pairCodeContainer" style="display:none;margin-top:14px">
+      <div id="pairCode" class="code" onclick="copyPairCode()" title="Click code to copy"></div>
+      <button type="button" id="copyPairCodeBtn" onclick="copyPairCode()" style="display:none;width:100%;margin:10px 0 0;background:rgba(16,185,129,0.2);border:1px solid #10b981;color:#6ee7b7;font-size:15px;padding:12px;border-radius:10px;cursor:pointer;font-weight:bold">📋 CLICK TO COPY CODE</button>
+    </div>
     <div id="pairInstructions" style="display:none;margin-top:14px;font-size:13px;color:#e2e8f0;line-height:1.8;background:#0f172a;padding:16px;border-radius:12px;border:1px solid #10b981">
       <b style="color:#6ee7b7;font-size:15px">👉 Apne Phone Me WhatsApp Kaise Link Karein:</b><br>
       1. Apne mobile me <b>WhatsApp</b> app open karein<br>
       2. Upar teen bindu (<b>⋮</b>) ya <b>Settings</b> → <b>Linked Devices</b> par tap karein<br>
       3. <b>Link a device</b> par click karein<br>
       4. Niche <b>"Link with phone number instead"</b> par click karein<br>
-      5. Upar dikha hua 8-digit code (jaise <b>ABCD-1234</b>) daalein!<br>
+      5. Upar dikha hua 8-digit code (jaise <b>ABCD-1234</b>) daalein ya <b>Paste</b> karein!<br>
       <i style="color:#94a3b8">Code daalte hi ye page automatically Green "Connected ✅" ho jayega.</i>
     </div>
   </div>
@@ -275,9 +279,14 @@ async function disconnectWhatsApp(){
   const msg=document.getElementById('pairMessage');
   const code=document.getElementById('pairCode');
   const inst=document.getElementById('pairInstructions');
+  const container=document.getElementById('pairCodeContainer');
+  const copyBtn=document.getElementById('copyPairCodeBtn');
   if(msg) msg.textContent='⏳ WhatsApp disconnect ho raha hai…';
-  if(code) code.style.display='none';
+  if(container) container.style.display='none';
+  if(code) { code.style.display='none'; code.innerHTML=''; }
+  if(copyBtn) copyBtn.style.display='none';
   if(inst) inst.style.display='none';
+  currentPairingCode='';
   try{
     const r=await fetch('/api/whatsapp/disconnect',{method:'POST'});
     const d=await r.json();
@@ -288,16 +297,72 @@ async function disconnectWhatsApp(){
   }
 }
 
+let currentPairingCode = '';
+function copyPairCode(){
+  const text = (currentPairingCode || document.getElementById('pairCode')?.innerText || '').replace(/[^A-Za-z0-9-]/g, '').trim();
+  if(!text) return;
+  const copyBtn = document.getElementById('copyPairCodeBtn');
+  function onCopied(){
+    if(copyBtn){
+      const prev = copyBtn.innerHTML;
+      copyBtn.innerHTML = '✅ COPIED TO CLIPBOARD!';
+      copyBtn.style.background = '#10b981';
+      copyBtn.style.color = '#000';
+      setTimeout(()=>{
+        copyBtn.innerHTML = prev;
+        copyBtn.style.background = 'rgba(16,185,129,0.2)';
+        copyBtn.style.color = '#6ee7b7';
+      },2500);
+    }
+    const msg = document.getElementById('pairMessage');
+    if(msg){
+      msg.textContent = '✅ Code (' + text + ') copy ho gaya! WhatsApp me jakar paste karein.';
+    }
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(onCopied).catch(()=>{
+      fallbackCopyText(text, onCopied);
+    });
+  }else{
+    fallbackCopyText(text, onCopied);
+  }
+}
+
+function fallbackCopyText(text, cb){
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if(successful && cb) cb();
+    else alert('Pairing code: ' + text);
+  }catch(_){
+    alert('Pairing code: ' + text);
+  }
+}
+
 async function connectWhatsApp(force = false){
   let phone=document.getElementById("waPhone").value.trim().replace(/\\D/g,"");
   const msg=document.getElementById("pairMessage");
   const code=document.getElementById("pairCode");
   const inst=document.getElementById("pairInstructions");
+  const container=document.getElementById("pairCodeContainer");
+  const copyBtn=document.getElementById("copyPairCodeBtn");
   const btn1=document.getElementById("pairBtn");
   const btn2=document.getElementById("forcePairBtn");
 
+  if(container) container.style.display="none";
+  if(copyBtn) copyBtn.style.display="none";
   code.style.display="none";
-  code.textContent="";
+  code.innerHTML="";
+  currentPairingCode="";
   if(inst) inst.style.display="none";
 
   if(phone.startsWith("00")) phone=phone.slice(2);
@@ -306,7 +371,7 @@ async function connectWhatsApp(force = false){
   document.getElementById("waPhone").value=phone;
 
   if(!/^\\d{10,15}$/.test(phone)){
-    msg.textContent="10 digit Indian mobile number ya country code ke saath number enter karein (example: 8115743185 ya 918115743185).";
+    msg.textContent="10 digit Indian mobile number ya country code ke saath number enter karein (example: 0123456789 ya 910123456789).";
     return;
   }
 
@@ -322,10 +387,13 @@ async function connectWhatsApp(force = false){
       return;
     }
     if(d.pairingCode){
-      code.textContent=d.pairingCode;
+      currentPairingCode=d.pairingCode;
+      code.innerHTML='<div style="font-weight:900;letter-spacing:8px">'+d.pairingCode+'</div><div style="font-size:12px;letter-spacing:1px;color:#a7f3d0;margin-top:6px;font-weight:normal">📋 Click code ya button to copy</div>';
       code.style.display="block";
+      if(container) container.style.display="block";
+      if(copyBtn) copyBtn.style.display="flex";
       if(inst) inst.style.display="block";
-      msg.textContent="✅ Pairing code mil gaya! Apne phone WhatsApp me enter karein:";
+      msg.textContent="✅ Pairing code mil gaya! Code copy karke WhatsApp me link karein:";
 
       if(pairPollTimer) clearInterval(pairPollTimer);
       pairPollTimer=setInterval(async()=>{
@@ -335,7 +403,11 @@ async function connectWhatsApp(force = false){
           if(std.connection==='Connected'){
             clearInterval(pairPollTimer);
             pairPollTimer=null;
+            if(container) container.style.display="none";
+            if(copyBtn) copyBtn.style.display="none";
             code.style.display="none";
+            code.innerHTML="";
+            currentPairingCode="";
             if(inst) inst.style.display="none";
             msg.textContent="🎉 WhatsApp Successfully Connected!";
             refreshStatus();
@@ -1065,7 +1137,7 @@ app.get('/pair', requireWebLogin, async(req,res)=>{
   const phoneNumber=canonicalPhone(req.query.phone);
   const force = req.query.force === 'true' || req.query.force === '1';
 
-  if(!/^\d{8,15}$/.test(phoneNumber))return res.status(400).json({error:'Valid phone number enter karein (e.g. 918115743185 ya 8115743185)'});
+  if(!/^\d{8,15}$/.test(phoneNumber))return res.status(400).json({error:'Valid phone number enter karein (e.g. 0123456789 ya 910123456789)'});
   if(phoneNumber!==owner)return res.status(403).json({error:`AAIRA account (${owner}) aur WhatsApp number (${phoneNumber}) same hone chahiye. Apne registered number ka WhatsApp connect karein.`});
 
   try{
