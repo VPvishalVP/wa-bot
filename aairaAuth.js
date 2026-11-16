@@ -282,6 +282,27 @@ async function getAISettings(phone) {
   };
 }
 
+async function setAISetting(phone, setting, value) {
+  const cPhone = canonicalPhone(phone);
+  const col = (setting === 'groqAIEnabled' || setting === 'groq_ai_enabled') ? 'groq_ai_enabled' : 'saved_model_enabled';
+  const valInt = value ? 1 : 0;
+  try {
+    await initUserDb(cPhone);
+    const udb = getUserDb(cPhone);
+    await udb.execute({
+      sql: `INSERT INTO aaira_account_settings (phone, ${col}, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(phone) DO UPDATE SET ${col} = excluded.${col}, updated_at = excluded.updated_at`,
+      args: [cPhone, valInt]
+    });
+  } catch (_) {}
+  await db.execute({
+    sql: `INSERT INTO aaira_account_settings (phone, ${col}, updated_at) VALUES (?, ?, datetime('now'))
+          ON CONFLICT(phone) DO UPDATE SET ${col} = excluded.${col}, updated_at = excluded.updated_at`,
+    args: [cPhone, valInt]
+  });
+  return !!value;
+}
+
 async function setBotSetting(phone, setting, value) {
   const cPhone = canonicalPhone(phone);
   const col = setting === 'botActive' ? 'bot_active' : 'auto_reply_enabled';
@@ -380,6 +401,7 @@ module.exports = {
   getBotSettings,
   getAISettings,
   setBotSetting,
+  setAISetting,
   claimWhatsAppSessionLock,
   releaseWhatsAppSessionLock,
   listRegisteredPhones,

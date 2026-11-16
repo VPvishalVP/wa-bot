@@ -86,8 +86,12 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
   <div id="waIdentity" class="note" style="margin-top:12px;display:none;background:#111;padding:12px;border-radius:10px;border-left:3px solid #10b981"><b id="waProfileName" style="color:#6ee7b7"></b><div id="waProfileNumber" style="margin-top:4px"></div><div id="waDeviceName" style="margin-top:4px;color:#aaa"></div></div>
   <div class="status" style="margin-top:10px"><span>Bot Status</span><span id="bot" class="pill">Checking...</span></div>
   <div class="status" style="margin-top:10px"><span>Auto Reply</span><span id="auto" class="pill">Checking...</span></div>
-  <div class="row" style="margin-top:15px"><button onclick="toggleBot('on')">BOT ON</button><button onclick="toggleBot('off')">BOT OFF</button></div>
-  <div class="row"><button onclick="toggleAuto('on')">AUTO-REPLY ON</button><button onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
+  <div class="status" style="margin-top:10px"><span>Groq AI Smart Replies</span><span id="groqStatusPill" class="pill">Checking...</span></div>
+  <div class="status" style="margin-top:10px"><span>Saved Message (Offline Bank)</span><span id="savedModelStatusPill" class="pill">Checking...</span></div>
+  <div class="row" style="margin-top:15px"><button type="button" onclick="toggleBot('on')">BOT ON</button><button type="button" onclick="toggleBot('off')">BOT OFF</button></div>
+  <div class="row"><button type="button" onclick="toggleAuto('on')">AUTO-REPLY ON</button><button type="button" onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
+  <div class="row"><button type="button" onclick="toggleAI('groq','on')">GROQ AI ON</button><button type="button" onclick="toggleAI('groq','off')">GROQ AI OFF</button></div>
+  <div class="row"><button type="button" onclick="toggleAI('saved','on')">SAVED MESSAGE ON</button><button type="button" onclick="toggleAI('saved','off')">SAVED MESSAGE OFF</button></div>
   <div class="row" style="margin-top:10px">
     <button onclick="refreshStatus()" style="flex:1">↻ REFRESH STATUS</button>
     <button onclick="disconnectWhatsApp()" style="flex:1;background:rgba(50,15,15,0.7);border-color:#b91c1c;color:#fca5a5">🔌 DISCONNECT / UNLINK</button>
@@ -238,7 +242,19 @@ async function refreshStatus(){
     if(connectPanel) connectPanel.style.display = isConn ? 'none' : 'block';
 
     document.getElementById('bot').textContent=d.botActive?'ON ✅':'OFF ❌';
+    document.getElementById('bot').className='pill '+(d.botActive?'green':'red');
     document.getElementById('auto').textContent=d.autoReplyEnabled?'ON ✅':'OFF ❌';
+    document.getElementById('auto').className='pill '+(d.autoReplyEnabled?'green':'red');
+    const groqPill=document.getElementById('groqStatusPill');
+    if(groqPill){
+      groqPill.textContent=d.groqAIEnabled?'ON ✅':'OFF ❌';
+      groqPill.className='pill '+(d.groqAIEnabled?'green':'red');
+    }
+    const savedPill=document.getElementById('savedModelStatusPill');
+    if(savedPill){
+      savedPill.textContent=d.savedModelEnabled?'ON ✅':'OFF ❌';
+      savedPill.className='pill '+(d.savedModelEnabled?'green':'red');
+    }
     const identity=document.getElementById('waIdentity');
     if(isConn && (d.waProfileName || d.waPhoneNumber)){
       identity.style.display='block';
@@ -347,6 +363,7 @@ async function userLogout(){
 
 async function toggleBot(action){const r=await fetch('/toggle?action='+action);const d=await r.json();alert(d.message||d.botStatus);refreshStatus()}
 async function toggleAuto(action){const r=await fetch('/auto-reply?action='+action);const d=await r.json();alert(d.message||d.autoReply);refreshStatus()}
+async function toggleAI(type,action){try{const r=await fetch('/toggle-ai?type='+type+'&action='+action);const d=await r.json();alert(d.message||d.error||'Updated');refreshStatus();}catch(e){alert('Failed: '+e.message);}}
 
 refreshStatus();loadDisplayName();
 
@@ -862,6 +879,7 @@ app.get('/api/status', requireWebLogin, async (req,res)=>{
   try{
     const owner=canonicalPhone(getWebSession(req).phone);
     const settings=await aairaAuth.getBotSettings(owner);
+    const aiSettings=await aairaAuth.getAISettings(owner);
     const socket=accountSockets.get(owner);
     const isReallyConnected = !!(socket && accountStatus.get(owner)==='Connected' && socket.authState?.creds?.registered && socket.authState?.creds?.account);
     const state=accountStatus.get(owner)||'Disconnected';
@@ -876,6 +894,8 @@ app.get('/api/status', requireWebLogin, async (req,res)=>{
       connection,
       botActive:settings.botActive,
       autoReplyEnabled:settings.autoReplyEnabled,
+      groqAIEnabled:aiSettings.groqAIEnabled,
+      savedModelEnabled:aiSettings.savedModelEnabled,
       socketReady:!!socket,
       waProfileName: isReallyConnected ? waProfileName : '',
       waPhoneNumber: isReallyConnected ? waPhoneNumber : '',
@@ -927,6 +947,27 @@ app.get('/auto-reply', requireWebLogin, async(req,res)=>{
   }catch(e){
     console.error('Auto-reply setting error:',e.message);
     res.status(500).json({error:'Auto-reply setting save failed'});
+  }
+});
+
+app.get('/toggle-ai', requireWebLogin, async(req,res)=>{
+  try{
+    const owner=canonicalPhone(getWebSession(req).phone);
+    const type=String(req.query.type||'').toLowerCase();
+    const action=String(req.query.action||'').toLowerCase();
+    if(!['groq','saved'].includes(type)||!['on','off'].includes(action))return res.status(400).json({error:'Invalid parameter'});
+    const settingName = type === 'groq' ? 'groq_ai_enabled' : 'saved_model_enabled';
+    const value = action === 'on';
+    await aairaAuth.setAISetting(owner, settingName, value);
+    const label = type === 'groq' ? 'Groq AI Smart Replies' : 'Saved Message (Offline Bank)';
+    res.json({
+      success: true,
+      message: `${label} is now ${value ? 'ON ✅' : 'OFF ❌'}`,
+      [settingName]: value
+    });
+  }catch(e){
+    console.error('AI setting toggle error:', e.message);
+    res.status(500).json({error:'AI setting save failed: '+e.message});
   }
 });
 

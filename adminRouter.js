@@ -124,7 +124,7 @@ router.get('/admin', async (req, res) => {
 
       const safe = JSON.stringify(users).replace(/</g, '\\u003c');
       const rows = users.map(u =>
-        '<tr><td>' + u.phone + (u.password ? '<br><small class="muted">Pass: ' + String(u.password).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])) + '</small>' : '') + '</td><td><span class="pill ' + (u.whatsapp_status === 'Connected' ? 'active' : u.whatsapp_status === 'Connecting' ? '' : 'blocked') + '">' + u.whatsapp_status + '</span></td><td><span class="pill ' + (u.blocked ? 'blocked' : 'active') + '">' + (u.blocked ? 'BLOCKED' : 'ACTIVE') + '</span></td><td><button class="' + (u.bot_active ? 'good' : 'danger') + '" onclick="userBot(this.dataset.phone,' + (!u.bot_active) + ')" data-phone="' + u.phone + '">BOT ' + (u.bot_active ? 'ON' : 'OFF') + '</button><button class="' + (u.auto_reply_enabled ? 'good' : 'danger') + '" onclick="userAutoReply(this.dataset.phone,' + (!u.auto_reply_enabled) + ')" data-phone="' + u.phone + '">AUTO REPLY ' + (u.auto_reply_enabled ? 'ON' : 'OFF') + '</button></td></tr>'
+        '<tr><td>' + u.phone + (u.password ? '<br><small class="muted">Pass: ' + String(u.password).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])) + '</small>' : '') + '</td><td><span class="pill ' + (u.whatsapp_status === 'Connected' ? 'active' : u.whatsapp_status === 'Connecting' ? '' : 'blocked') + '">' + u.whatsapp_status + '</span></td><td><span class="pill ' + (u.blocked ? 'blocked' : 'active') + '">' + (u.blocked ? 'BLOCKED' : 'ACTIVE') + '</span></td><td><button class="' + (u.bot_active ? 'good' : 'danger') + '" onclick="userBot(this.dataset.phone,' + (!u.bot_active) + ')" data-phone="' + u.phone + '">BOT ' + (u.bot_active ? 'ON' : 'OFF') + '</button><button class="' + (u.auto_reply_enabled ? 'good' : 'danger') + '" onclick="userAutoReply(this.dataset.phone,' + (!u.auto_reply_enabled) + ')" data-phone="' + u.phone + '">AUTO REPLY ' + (u.auto_reply_enabled ? 'ON' : 'OFF') + '</button><button class="' + (u.groq_ai_enabled ? 'good' : 'danger') + '" onclick="userAI(this.dataset.phone,\'groq_ai_enabled\',' + (!u.groq_ai_enabled) + ')" data-phone="' + u.phone + '">GROQ AI ' + (u.groq_ai_enabled ? 'ON' : 'OFF') + '</button><button class="' + (u.saved_model_enabled ? 'good' : 'danger') + '" onclick="userAI(this.dataset.phone,\'saved_model_enabled\',' + (!u.saved_model_enabled) + ')" data-phone="' + u.phone + '">SAVED MODEL ' + (u.saved_model_enabled ? 'ON' : 'OFF') + '</button></td></tr>'
       ).join('') || '<tr><td colspan="4">No registered users found.</td></tr>';
 
       html = html
@@ -273,11 +273,8 @@ router.post('/admin/api/userbot', requireAdmin, async (req, res) => {
     const active = activeRaw === true || activeRaw === 'true';
     if (!/^\d{10,15}$/.test(phone)) return res.status(400).json({ error: 'Invalid user phone number' });
 
-    await db.execute({
-      sql: `INSERT INTO aaira_account_settings (phone, bot_active, updated_at) VALUES (?, ?, datetime('now'))
-            ON CONFLICT(phone) DO UPDATE SET bot_active = excluded.bot_active, updated_at = excluded.updated_at`,
-      args: [phone, active ? 1 : 0]
-    });
+    const aairaAuth = require('./aairaAuth');
+    await aairaAuth.setBotSetting(phone, 'botActive', active);
     res.json({ success: true, bot_active: active });
   } catch (e) {
     console.error('[ADMIN] Bot toggle failed:', e.message);
@@ -289,15 +286,12 @@ router.post('/admin/api/userai', requireAdmin, async (req, res) => {
   try {
     const phone = cleanPhone(req.body.phone);
     const setting = String(req.body.setting || '');
-    const enabled = req.body.enabled;
-    if (!/^\d{10,15}$/.test(phone) || !['groq_ai_enabled', 'saved_model_enabled'].includes(setting) || (enabled !== true && enabled !== false)) {
+    const enabled = req.body.enabled === true || req.body.enabled === 'true';
+    if (!/^\d{10,15}$/.test(phone) || !['groq_ai_enabled', 'saved_model_enabled'].includes(setting)) {
       return res.status(400).json({ error: 'Invalid AI setting' });
     }
-    await db.execute({
-      sql: `INSERT INTO aaira_account_settings (phone, ${setting}, updated_at) VALUES (?, ?, datetime('now'))
-            ON CONFLICT(phone) DO UPDATE SET ${setting} = excluded.${setting}, updated_at = excluded.updated_at`,
-      args: [phone, enabled ? 1 : 0]
-    });
+    const aairaAuth = require('./aairaAuth');
+    await aairaAuth.setAISetting(phone, setting, enabled);
     res.json({ success: true, [setting]: enabled });
   } catch (e) {
     console.error('[ADMIN] AI setting update failed:', e.message);
@@ -312,11 +306,8 @@ router.post('/admin/api/userautoreply', requireAdmin, async (req, res) => {
     const active = activeRaw === true || activeRaw === 'true';
     if (!/^\d{10,15}$/.test(phone)) return res.status(400).json({ error: 'Invalid user phone number' });
 
-    await db.execute({
-      sql: `INSERT INTO aaira_account_settings (phone, auto_reply_enabled, updated_at) VALUES (?, ?, datetime('now'))
-            ON CONFLICT(phone) DO UPDATE SET auto_reply_enabled = excluded.auto_reply_enabled, updated_at = excluded.updated_at`,
-      args: [phone, active ? 1 : 0]
-    });
+    const aairaAuth = require('./aairaAuth');
+    await aairaAuth.setBotSetting(phone, 'autoReply', active);
     res.json({ success: true, auto_reply_enabled: active });
   } catch (e) {
     console.error('[ADMIN] Auto reply toggle failed:', e.message);

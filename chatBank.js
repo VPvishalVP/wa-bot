@@ -181,12 +181,18 @@ const contextReplies = {
     "Aww sacchi? Main bhi aapko yaad kar rahi thi! Kahan gayab the? 🥺💗",
     "Yahin hu main toh! Bolo na kya chal raha hai? 🌸"
   ],
+  ownerStatus: [
+    "VIHUHUHU abhi thode busy hain 🌸 jaise hi free honge aapse zaroor baat karenge! Koi zaroori message ho toh mujhe bata dijiye 😊",
+    "Filhal VIHUHUHU kisi kaam me vyast hain ✨ aate hi unhe batati hu ki aapka message aaya tha! Kuch urgent hai toh batao? 🥺",
+    "VIHUHUHU abhi thoda busy hain 🌸 free hote hi reply karenge! Main unki offline assistant AAIRA hu, batao main help karu? ✨",
+    "VIHUHUHU abhi available nahi hain 🙈 unka koi zaroori kaam chal raha hai! Aap unke liye message chhod sakte ho 🌸"
+  ],
   general: [
-    "Achha! Aur batao, din kaisa ja raha hai aapka? 🌸",
-    "Haan main sun rahi hu, aage batao na kya hua? 😊",
-    "Sahi hai! Aur kya naya chal raha hai aaj kal? ✨",
-    "Bolo bolo, main dhyan se sun rahi hu! 🌸",
-    "Achha ji! Phir kya hua aage? 🙈"
+    "Haanji, main sun rahi hu! 🌸 Aur batao, din kaisa ja raha hai aapka? 😊",
+    "Sahi hai! Aur batao, sab kaisa chal raha hai? ✨",
+    "Achha! Aur sunao, sab badhiya na? 🌸",
+    "Hehe bolo bolo, main toh yahin hu! 🌸 Aur kya naya chal raha hai? 😊",
+    "Mast! Aur batao, aaj din bhar me kya kya kiya? ✨"
   ]
 };
 
@@ -207,10 +213,11 @@ const patterns = [
   ["pic", /\b(photo|pic|dp|picture|photo bhejo|pic bhejo|shakal dikhao)\b/i],
   ["gender", /\b(ladki ho|ladka ho|boy or girl|gender|male ya female)\b/i],
   ["relationship", /\b(bf hai|boyfriend|single ho|shaadi|married|pyaar karti ho)\b/i],
+  ["ownerStatus", /\b(kaha hai|kahan hai|kidhar hai|kaha gaye|kidhar gaye|kaha gaya|kahan busy|busy hai|baat karao|baat karni hai|se baat|call lagao|call lagaye|vishal kaha|vihuhuhu kaha|malik kaha|owner kaha|online kab)\b/i],
   ["location", /\b(kahan ho|kahan par ho|kidhar ho|where are you|kahan rehti ho|kahan se ho|kahan ki ho)\b/i],
   ["identity", /\b(tum kaun|aap kaun|kaun ho|kon ho|kaun bol|naam kya|kya naam|who are you|are you ai|ai ho|bot ho|robot|kiska number|kiska phone|kiska whatsapp|owner|malik|kisne banaya)\b/i],
-  ["youTell", /\b(apna batao|tum batao|aap batao|apna sunao|tum sunao|aap sunao)\b/i],
-  ["sayWhat", /\b(kya bolu|kya bolun|kya boloon|kya batau|kya bataun|kya baat karein|kuch nahi|kuch nhi|kuch khas nahi|kuch na)\b/i],
+  ["youTell", /\b(apna batao|tum batao|aap batao|apna sunao|tum sunao|aap sunao|tumhara batao|aapna batqo|apna batqo|aap bataiye|tum batao na)\b/i],
+  ["sayWhat", /\b(kya bolu|kya bolun|kya boloon|kya batau|kya bataun|kya baat karein|kuch nahi|kuch nhi|kuch khas nahi|kuch na|kuch bhee|kuch bhi)\b/i],
   ["doing", /\b(kya kar rahe|kya kar rahi|what are you doing|kya chal raha|kahan busy|free ho)\b/i],
   ["howAreYou", /\b(kaise ho|kaisi ho|how are you|how r u|haal chaal|kya haal|tabiyat kaisi)\b/i],
   ["compliment", /\b(cute|beautiful|handsome|smart ho|achhe ho|nice|awesome|kamaal ho|tareef|khoobsurat)\b/i],

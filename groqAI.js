@@ -63,8 +63,8 @@ Mahatvapurna Niyam (${displayName} ke hisaab se baat karna):
         const response = await client.chat.completions.create({
           model,
           messages,
-          temperature: 0.8,
-          max_tokens: 250
+          temperature: 0.75,
+          max_tokens: 600
         });
         const reply = response.choices?.[0]?.message?.content?.trim() || null;
         if (reply) {
