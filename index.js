@@ -28,7 +28,8 @@ const liveChatBuffers=new Map(),liveChatListeners=new Map(),liveContactNames=new
 function registerJidPair(primary,alternate){const p=String(primary||'').replace(/:\d+@/, '@'),a=String(alternate||'').replace(/:\d+@/, '@');if(p.endsWith('@lid')&&a.endsWith('@s.whatsapp.net'))lidToPhoneJid.set(p,a);else if(a.endsWith('@lid')&&p.endsWith('@s.whatsapp.net'))lidToPhoneJid.set(a,p);}
 function preferredContactJid(primary,alternate){registerJidPair(primary,alternate);const p=String(primary||'').replace(/:\d+@/, '@'),a=String(alternate||'').replace(/:\d+@/, '@');const pn=/^\d{8,15}@s\.whatsapp\.net$/;if(pn.test(p))return p;if(pn.test(a))return a;if(p&&lidToPhoneJid.has(p))return lidToPhoneJid.get(p);if(a&&lidToPhoneJid.has(a))return lidToPhoneJid.get(a);return p||a||'';}
 function liveMessageText(message){let m=message||{};for(let i=0;i<5;i++){if(m.ephemeralMessage?.message)m=m.ephemeralMessage.message;else if(m.viewOnceMessage?.message)m=m.viewOnceMessage.message;else if(m.viewOnceMessageV2?.message)m=m.viewOnceMessageV2.message;else if(m.documentWithCaptionMessage?.message)m=m.documentWithCaptionMessage.message;else break;}const t=m.conversation||m.extendedTextMessage?.text||m.imageMessage?.caption||m.videoMessage?.caption||m.documentMessage?.caption||m.buttonsResponseMessage?.selectedDisplayText||m.listResponseMessage?.title||m.templateButtonReplyMessage?.selectedDisplayText||m.pollCreationMessage?.name||m.pollCreationMessageV3?.name||m.locationMessage?.name||m.locationMessage?.address||m.contactMessage?.displayName||m.contactsArrayMessage?.displayName;if(t)return String(t);if(m.imageMessage)return '🖼️ Image'+(m.imageMessage.caption?' — '+m.imageMessage.caption:'');if(m.videoMessage)return '🎥 Video'+(m.videoMessage.caption?' — '+m.videoMessage.caption:'');if(m.audioMessage)return m.audioMessage.ptt?'🎤 Voice message':'🔊 Audio message';if(m.stickerMessage)return '🎭 Sticker';if(m.documentMessage)return '📎 Document: '+(m.documentMessage.fileName||'file');if(m.locationMessage)return '📍 Location';if(m.liveLocationMessage)return '📍 Live location';if(m.contactMessage||m.contactsArrayMessage)return '👤 Contact card';if(m.reactionMessage)return '😊 Reaction: '+(m.reactionMessage.text||'');if(m.pollUpdateMessage)return '📊 Poll vote';if(m.protocolMessage)return '';return '';}
-function publishLiveChat(owner,item){if(!owner||!item?.jid)return;item.jid=String(item.jid).replace(/:\d+@/,'@');if(item.jid.endsWith('@lid')){if(lidToPhoneJid.has(item.jid)){item.jid=lidToPhoneJid.get(item.jid);}else if(item.phoneNumber&&/^\d{8,15}$/.test(item.phoneNumber)){const mapped=item.phoneNumber+'@s.whatsapp.net';lidToPhoneJid.set(item.jid,mapped);item.jid=mapped;}}let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}const names=liveContactNames.get(owner)||new Map();liveContactNames.set(owner,names);const numbers=liveContactNumbers.get(owner)||new Map();liveContactNumbers.set(owner,numbers);const pnJid=/^(\d{8,15})@s\.whatsapp\.net$/.exec(item.jid);const suppliedNumber=String(item.phoneNumber||'').replace(/\D/g,'');const incomingNumber=pnJid?.[1]||(/^\d{8,15}$/.test(suppliedNumber)?suppliedNumber:'');if(incomingNumber)numbers.set(item.jid,incomingNumber);const incomingName=String(item.contactName||'').trim().slice(0,100),incomingWhatsAppName=String(item.whatsappName||'').trim().slice(0,100);if(incomingName)names.set(item.jid,incomingName);const waNames=liveWhatsAppNames.get(owner)||new Map();liveWhatsAppNames.set(owner,waNames);if(incomingWhatsAppName)waNames.set(item.jid,incomingWhatsAppName);const prior=[...b].reverse().find(x=>x.jid===item.jid&&x.contactName)?.contactName||'',resolvedName=names.get(item.jid)||incomingName||prior||waNames.get(item.jid)||incomingWhatsAppName||'';let cleanText=String(item.text||'').replace(/\u200B/g,'').trim();if(!cleanText)return;const entry={id:item.id||require('crypto').randomUUID(),jid:item.jid,text:cleanText.slice(0,4000),contactName:resolvedName,phoneNumber:incomingNumber||numbers.get(item.jid)||'',fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()};if(item.id&&b.some(x=>x.id===item.id))return;if(b.some(x=>x.jid===entry.jid&&x.fromMe===entry.fromMe&&x.text===entry.text&&Math.abs(Number(x.timestamp)-Number(entry.timestamp))<4000))return;const existing=b.findIndex(x=>x.jid===entry.jid&&!x.text);if(existing>=0)b.splice(existing,1);b.push(entry);const perJid=b.filter(x=>x.jid===entry.jid);if(perJid.length>100){const remove=new Set(perJid.slice(0,perJid.length-100).map(x=>x.id));b=b.filter(x=>!remove.has(x.id));}const latestByJid=new Map();for(const x of b){const prev=latestByJid.get(x.jid);if(!prev||x.timestamp>prev.timestamp)latestByJid.set(x.jid,x);}const newestJids=[...latestByJid.values()].sort((a,c)=>c.timestamp-a.timestamp).slice(0,100).map(x=>x.jid);const keep=new Set(newestJids);b=b.filter(x=>keep.has(x.jid));if(b.length>1000)b.splice(0,b.length-1000);liveChatBuffers.set(owner,b);aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));for(const fn of liveChatListeners.get(owner)||[]){try{fn(entry)}catch{}}}
+function isRealSavedName(name){if(!name)return false;const s=String(name).replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim();if(!s)return false;if(/^[\s\u200B-\u200D\uFEFF\u3164\uFFA0]+$/.test(s))return false;if(/^(whatsapp\s*(contact|user)|none|nõne|null|undefined|unknown|sender)$/i.test(s))return false;if(/^\+?\d{8,16}$/.test(s.replace(/[\s\-()]+/g,'')))return false;return true;}
+function publishLiveChat(owner,item){if(!owner||!item?.jid)return;item.jid=String(item.jid).replace(/:\d+@/,'@');if(item.jid.endsWith('@lid')){if(lidToPhoneJid.has(item.jid)){item.jid=lidToPhoneJid.get(item.jid);}else if(item.phoneNumber&&/^\d{8,15}$/.test(item.phoneNumber)){const mapped=item.phoneNumber+'@s.whatsapp.net';lidToPhoneJid.set(item.jid,mapped);item.jid=mapped;}}let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}const names=liveContactNames.get(owner)||new Map();liveContactNames.set(owner,names);const numbers=liveContactNumbers.get(owner)||new Map();liveContactNumbers.set(owner,numbers);const pnJid=/^(\d{8,15})@s\.whatsapp\.net$/.exec(item.jid);const suppliedNumber=String(item.phoneNumber||'').replace(/\D/g,'');const incomingNumber=pnJid?.[1]||(/^\d{8,15}$/.test(suppliedNumber)?suppliedNumber:'');if(incomingNumber)numbers.set(item.jid,incomingNumber);const rawIncomingName=String(item.contactName||'').replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim().slice(0,100);const isIncomingSaved=isRealSavedName(rawIncomingName);if(isIncomingSaved)names.set(item.jid,rawIncomingName);const prior=[...b].reverse().find(x=>x.jid===item.jid&&isRealSavedName(x.contactName))?.contactName||'';const resolvedSavedName=(isIncomingSaved?rawIncomingName:'')||names.get(item.jid)||(isRealSavedName(prior)?prior:'')||'';if(resolvedSavedName){let updatedAny=false;for(const x of b){if(x.jid===item.jid&&(!x.contactName||!isRealSavedName(x.contactName))){x.contactName=resolvedSavedName;updatedAny=true;}}if(updatedAny){aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));}}let cleanText=String(item.text||'').replace(/\u200B/g,'').trim();if(!cleanText)return;const entry={id:item.id||require('crypto').randomUUID(),jid:item.jid,text:cleanText.slice(0,4000),contactName:resolvedSavedName,phoneNumber:incomingNumber||numbers.get(item.jid)||'',fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()};if(item.id&&b.some(x=>x.id===item.id))return;if(b.some(x=>x.jid===entry.jid&&x.fromMe===entry.fromMe&&x.text===entry.text&&Math.abs(Number(x.timestamp)-Number(entry.timestamp))<4000))return;const existing=b.findIndex(x=>x.jid===entry.jid&&!x.text);if(existing>=0)b.splice(existing,1);b.push(entry);const perJid=b.filter(x=>x.jid===entry.jid);if(perJid.length>100){const remove=new Set(perJid.slice(0,perJid.length-100).map(x=>x.id));b=b.filter(x=>!remove.has(x.id));}const latestByJid=new Map();for(const x of b){const prev=latestByJid.get(x.jid);if(!prev||x.timestamp>prev.timestamp)latestByJid.set(x.jid,x);}const newestJids=[...latestByJid.values()].sort((a,c)=>c.timestamp-a.timestamp).slice(0,100).map(x=>x.jid);const keep=new Set(newestJids);b=b.filter(x=>keep.has(x.jid));if(b.length>1000)b.splice(0,b.length-1000);liveChatBuffers.set(owner,b);aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));for(const fn of liveChatListeners.get(owner)||[]){try{fn(entry)}catch{}}}
 
 const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -464,6 +465,16 @@ function connectLiveChat(){
   });
 }
 
+function isRealSavedName(name){
+  if(!name)return false;
+  const s=String(name).replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim();
+  if(!s)return false;
+  if(/^[\s\u200B-\u200D\uFEFF\u3164\uFFA0]+$/.test(s))return false;
+  if(/^(whatsapp\s*(contact|user)|none|nõne|null|undefined|unknown|sender)$/i.test(s))return false;
+  if(/^\+?\d{8,16}$/.test(s.replace(/[\s\-()]+/g,'')))return false;
+  return true;
+}
+
 function renderLiveChats(){
   const contacts=document.getElementById('liveChatContacts'),messages=document.getElementById('liveChatMessages');
   const activeHeader=document.getElementById('liveChatActiveHeader');
@@ -472,8 +483,12 @@ function renderLiveChats(){
   const validItems=liveChatItems.filter(function(x){return x&&x.text&&x.text!=='ℹ️ Message update';});
 
   const contactMap=new Map();
+  const contactNames=new Map();
   for(const item of validItems){
     const jid=item.jid;
+    if(isRealSavedName(item.contactName)){
+      contactNames.set(jid,item.contactName.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim());
+    }
     const existing=contactMap.get(jid);
     if(!existing||Number(item.timestamp||0)>=Number(existing.timestamp||0)){
       contactMap.set(jid,item);
@@ -507,12 +522,12 @@ function renderLiveChats(){
       ?'background:rgba(16,185,129,0.22);border:1px solid #10b981;border-radius:10px;padding:9px 10px;margin-bottom:6px;width:100%;text-align:left;display:block;cursor:pointer;'
       :'background:rgba(25,25,25,0.7);border:1px solid #444;border-radius:10px;padding:9px 10px;margin-bottom:6px;width:100%;text-align:left;display:block;cursor:pointer;';
 
-    const phone=/^\\d{8,15}@s\\.whatsapp\\.net$/.test(jid)
+    const phone=/^\d{8,15}@s\.whatsapp\.net$/.test(jid)
       ?jid.split('@')[0]
-      :(/^\\d{8,15}$/.test(lastItem?.phoneNumber||'')?lastItem.phoneNumber:'');
-    const displayName=(lastItem?.contactName&&lastItem.contactName!=='WhatsApp Contact')
-      ?lastItem.contactName
-      :(phone?'+'+phone:'WhatsApp Contact');
+      :(/^\d{8,15}$/.test(lastItem?.phoneNumber||'')?lastItem.phoneNumber:'');
+    const rawSaved=contactNames.get(jid)||(isRealSavedName(lastItem?.contactName)?lastItem.contactName:'');
+    const isSaved=isRealSavedName(rawSaved);
+    const displayName=isSaved?rawSaved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():(phone?'+'+phone:'Unknown');
 
     const stamp=new Date(Number(lastItem?.timestamp)||Date.now());
     const timeStr=new Intl.DateTimeFormat('en-IN',{
@@ -537,7 +552,7 @@ function renderLiveChats(){
     topRow.appendChild(timeEl);
     b.appendChild(topRow);
 
-    if(phone){
+    if(isSaved && phone){
       const phoneEl=document.createElement('div');
       phoneEl.style.cssText='font-size:11px;color:#10b981;margin-top:2px';
       phoneEl.textContent='+'+phone;
@@ -557,21 +572,21 @@ function renderLiveChats(){
     activeHeader.replaceChildren();
     if(selectedLiveJid){
       const activeItem=contactMap.get(selectedLiveJid);
-      const activePhone=/^\\d{8,15}@s\\.whatsapp\\.net$/.test(selectedLiveJid)
+      const activePhone=/^\d{8,15}@s\.whatsapp\.net$/.test(selectedLiveJid)
         ?selectedLiveJid.split('@')[0]
-        :(/^\\d{8,15}$/.test(activeItem?.phoneNumber||'')?activeItem.phoneNumber:'');
-      const activeName=(activeItem?.contactName&&activeItem.contactName!=='WhatsApp Contact')
-        ?activeItem.contactName
-        :(activePhone?'+'+activePhone:'WhatsApp Contact');
+        :(/^\d{8,15}$/.test(activeItem?.phoneNumber||'')?activeItem.phoneNumber:'');
+      const rawActiveSaved=contactNames.get(selectedLiveJid)||(isRealSavedName(activeItem?.contactName)?activeItem.contactName:'');
+      const isSavedActive=isRealSavedName(rawActiveSaved);
+      const activeTitle=isSavedActive?rawActiveSaved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():(activePhone?'+'+activePhone:'Unknown');
 
       const wrapH=document.createElement('div');
       wrapH.style.cssText='display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #444;padding-bottom:8px;margin-bottom:8px';
       const infoBox=document.createElement('div');
       const titleEl=document.createElement('b');
       titleEl.style.cssText='font-size:15px;color:#6ee7b7';
-      titleEl.textContent=activeName;
+      titleEl.textContent=activeTitle;
       infoBox.appendChild(titleEl);
-      if(activePhone){
+      if(isSavedActive && activePhone){
         const pSpan=document.createElement('span');
         pSpan.style.cssText='font-size:12px;color:#aaa;margin-left:8px';
         pSpan.textContent='+'+activePhone;
@@ -604,6 +619,8 @@ function renderLiveChats(){
     messages.appendChild(p);
   }
 
+  const activeSavedName=contactNames.get(selectedLiveJid)||(isRealSavedName(selectedItem?.contactName)?selectedItem.contactName:'');
+
   shown.forEach(function(x){
     const d=document.createElement('div');
     const isOut=!!x.fromMe;
@@ -620,7 +637,10 @@ function renderLiveChats(){
     }else{
       const tag=document.createElement('div');
       tag.style.cssText='font-size:11px;font-weight:bold;color:#93c5fd;margin-bottom:4px';
-      tag.textContent=x.contactName||(x.phoneNumber?'+'+x.phoneNumber:'Sender');
+      const msgSaved=isRealSavedName(x.contactName)?x.contactName:(isRealSavedName(activeSavedName)?activeSavedName:'');
+      const isSavedMsg=isRealSavedName(msgSaved);
+      const phone=x.phoneNumber||(/^(\d{8,15})@s\.whatsapp\.net$/.exec(x.jid)?.[1]||'');
+      tag.textContent=isSavedMsg?msgSaved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():(phone?'+'+phone:'Sender');
       d.appendChild(tag);
     }
 
@@ -649,6 +669,9 @@ function renderLiveChats(){
   messages.scrollTop=messages.scrollHeight;
 }
 
+  messages.scrollTop=messages.scrollHeight;
+}
+
 async function sendLiveChatReply(){
   if(!selectedLiveJid){alert('Pehle contact select karein');return;}
   const input=document.getElementById('liveChatReply'),text=input.value.trim();
@@ -663,10 +686,12 @@ async function sendLiveChatReply(){
     if(!r.ok){alert(d.error||'Message send nahi hua');return;}
     const currentItem=[...liveChatItems].reverse().find(function(x){return x.jid===selectedLiveJid;});
     const currentPhone=currentItem?.phoneNumber||(selectedLiveJid?.endsWith('@s.whatsapp.net')?selectedLiveJid.split('@')[0]:'');
+    const currentContactName=currentItem?.contactName||'';
     liveChatItems.push({
       id:String(Date.now()),
       jid:selectedLiveJid,
       phoneNumber:currentPhone,
+      contactName:currentContactName,
       text:text,
       fromMe:true,
       timestamp:Date.now()
@@ -791,7 +816,20 @@ app.get('/api/live-chat/history',requireWebLogin,async(req,res)=>{
       b=await aairaAuth.loadLiveChatBuffer(owner);
       liveChatBuffers.set(owner,b||[]);
     }
-    const cleaned=(b||[]).filter(x=>x&&x.text&&x.text!=='ℹ️ Message update');
+    const names=liveContactNames.get(owner)||new Map();
+    liveContactNames.set(owner,names);
+    for(const x of b||[]){
+      if(isRealSavedName(x.contactName)&&!names.has(x.jid)){
+        names.set(x.jid,x.contactName.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim());
+      }
+    }
+    const cleaned=(b||[]).filter(x=>x&&x.text&&x.text!=='ℹ️ Message update').map(x=>{
+      const saved=names.get(x.jid)||(isRealSavedName(x.contactName)?x.contactName:'');
+      return {
+        ...x,
+        contactName:isRealSavedName(saved)?saved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():''
+      };
+    });
     res.json({success:true,items:cleaned});
   }catch(e){
     console.error('[LIVE CHAT] History load failed:',e.message);
@@ -810,15 +848,36 @@ app.get('/api/live-chat/stream',async(req,res)=>{
       liveChatBuffers.set(owner,b||[]);
     }catch(_){}
   }
+  const names=liveContactNames.get(owner)||new Map();
+  liveContactNames.set(owner,names);
+  for(const x of b||[]){
+    if(isRealSavedName(x.contactName)&&!names.has(x.jid)){
+      names.set(x.jid,x.contactName.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim());
+    }
+  }
+  const cleaned=(b||[]).filter(x=>x&&x.text&&x.text!=='ℹ️ Message update').map(x=>{
+    const saved=names.get(x.jid)||(isRealSavedName(x.contactName)?x.contactName:'');
+    return {
+      ...x,
+      contactName:isRealSavedName(saved)?saved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():''
+    };
+  });
   res.setHeader('Content-Type','text/event-stream');
   res.setHeader('Cache-Control','no-cache, no-transform');
   res.setHeader('Connection','keep-alive');
   res.flushHeaders?.();
   const send=(event,data)=>res.write('event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n');
-  send('snapshot',liveChatBuffers.get(owner)||[]);
+  send('snapshot',cleaned);
   let listeners=liveChatListeners.get(owner);
   if(!listeners){listeners=new Set();liveChatListeners.set(owner,listeners)}
-  const listener=item=>send('message',item);
+  const listener=item=>{
+    const saved=names.get(item.jid)||(isRealSavedName(item.contactName)?item.contactName:'');
+    const safeItem={
+      ...item,
+      contactName:isRealSavedName(saved)?saved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():''
+    };
+    send('message',safeItem);
+  };
   listeners.add(listener);
   const keepAlive=setInterval(()=>res.write(': keep-alive\n\n'),25000);
   req.on('close',()=>{clearInterval(keepAlive);listeners.delete(listener);if(!listeners.size)liveChatListeners.delete(owner)});
@@ -1250,9 +1309,10 @@ async function startAccountBot(ownerPhone){
       }
     });
 
-    socket.ev.on('contacts.upsert',contacts=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',whatsappName:contact.notify||contact.pushName||contact.verifiedName||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
-    socket.ev.on('chats.upsert',chats=>{for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||chat.pushName||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
-    socket.ev.on('messaging-history.set',({contacts,chats,messages})=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',whatsappName:contact.notify||contact.pushName||contact.verifiedName||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||chat.subject||'',whatsappName:chat.pushName||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const msg of messages||[]){if(isGroupMessage(msg)||isStatusRelatedMessage(msg)||isNewsletterMessage(msg)||msg.key?.participant)continue;const jid=preferredContactJid(msg.key?.remoteJid,msg.key?.remoteJidAlt);if(!jid||jid==='status@broadcast'||jid.endsWith('@g.us')||jid.endsWith('@newsletter')||jid.endsWith('@broadcast'))continue;const text=liveMessageText(msg.message);publishLiveChat(ownerPhone,{id:msg.key?.id,jid,text,whatsappName:msg.pushName||msg.verifiedBizName||'',fromMe:!!msg.key?.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()});}});
+    socket.ev.on('contacts.upsert',contacts=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
+    socket.ev.on('contacts.update',updates=>{for(const contact of updates||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast')&&contact.name)publishLiveChat(ownerPhone,{jid,contactName:contact.name,phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
+    socket.ev.on('chats.upsert',chats=>{for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}});
+    socket.ev.on('messaging-history.set',({contacts,chats,messages})=>{for(const contact of contacts||[]){const jid=contact.id||contact.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:contact.name||'',phoneNumber:contact.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const chat of chats||[]){const jid=chat.id||chat.jid;if(jid&&jid!=='status@broadcast'&&!jid.endsWith('@g.us')&&!jid.endsWith('@newsletter')&&!jid.endsWith('@broadcast'))publishLiveChat(ownerPhone,{jid,contactName:chat.name||'',phoneNumber:chat.phoneNumber||(jid.endsWith('@s.whatsapp.net')?jid.split('@')[0]:'')});}for(const msg of messages||[]){if(isGroupMessage(msg)||isStatusRelatedMessage(msg)||isNewsletterMessage(msg)||msg.key?.participant)continue;const jid=preferredContactJid(msg.key?.remoteJid,msg.key?.remoteJidAlt);if(!jid||jid==='status@broadcast'||jid.endsWith('@g.us')||jid.endsWith('@newsletter')||jid.endsWith('@broadcast'))continue;const text=liveMessageText(msg.message);publishLiveChat(ownerPhone,{id:msg.key?.id,jid,text,whatsappName:msg.pushName||msg.verifiedBizName||'',fromMe:!!msg.key?.fromMe,timestamp:msg.messageTimestamp?Number(msg.messageTimestamp)*1000:Date.now()});}});
     socket.ev.on('messages.upsert',async({messages,type})=>{
       if(type!=='notify')return;
       for(const msg of messages){try{
