@@ -1,13 +1,5 @@
-const { db } = require('./db');
+const { db, getUserDb, initUserDb, deleteUserDb, canonicalPhone } = require('./db');
 const bcrypt = require('bcryptjs');
-
-function canonicalPhone(phone) {
-  let p = String(phone || '').replace(/\D/g, '');
-  if (p.startsWith('00')) p = p.slice(2);
-  if (p.length === 10) return '91' + p;
-  if (p.length === 11 && p.startsWith('0')) return '91' + p.slice(1);
-  return p;
-}
 
 async function register(phone, password) {
   const cPhone = canonicalPhone(phone);
@@ -30,6 +22,16 @@ async function register(phone, password) {
           VALUES (?, 1, 1, 'Disconnected', 1, 1, 'VIHUHUHU')`,
     args: [cPhone]
   });
+
+  // Initialize dedicated database file for this ID
+  await initUserDb(cPhone);
+  const udb = getUserDb(cPhone);
+  await udb.execute({
+    sql: `INSERT OR IGNORE INTO aaira_account_settings (phone, bot_active, auto_reply_enabled, whatsapp_status, groq_ai_enabled, saved_model_enabled, display_name)
+          VALUES (?, 1, 1, 'Disconnected', 1, 1, 'VIHUHUHU')`,
+    args: [cPhone]
+  });
+
   return 'created';
 }
 
@@ -78,6 +80,9 @@ async function verify(phone, password) {
     args: [cPhone, p10]
   });
 
+  // Ensure user's dedicated DB is initialized
+  await initUserDb(cPhone);
+
   // Normalize phone in DB to canonical format if needed
   if (user.phone !== cPhone) {
     try {
@@ -121,6 +126,8 @@ async function deleteAccount(phone) {
     sql: 'DELETE FROM aaira_login_attempts WHERE phone = ? OR phone = ?',
     args: [cPhone, p10]
   });
+  // Delete the dedicated database file completely
+  await deleteUserDb(cPhone);
   return res.rowsAffected > 0 ? 'deleted' : 'not_found';
 }
 
@@ -131,11 +138,20 @@ async function deleteAccountSettings(phone) {
     sql: 'DELETE FROM aaira_account_settings WHERE phone = ? OR phone = ?',
     args: [cPhone, p10]
   });
+  try {
+    const udb = getUserDb(cPhone);
+    await udb.execute({
+      sql: 'DELETE FROM aaira_account_settings WHERE phone = ? OR phone = ?',
+      args: [cPhone, p10]
+    });
+  } catch (_) {}
 }
 
 async function loadLiveChatBuffer(phone) {
   const cPhone = canonicalPhone(phone);
-  const res = await db.execute({
+  await initUserDb(cPhone);
+  const udb = getUserDb(cPhone);
+  const res = await udb.execute({
     sql: "SELECT data FROM sessions WHERE session_id = ? AND key = 'live_chat_data'",
     args: ['account_' + cPhone]
   });
@@ -148,7 +164,9 @@ async function loadLiveChatBuffer(phone) {
 
 async function saveLiveChatBuffer(phone, items) {
   const cPhone = canonicalPhone(phone);
-  await db.execute({
+  await initUserDb(cPhone);
+  const udb = getUserDb(cPhone);
+  await udb.execute({
     sql: `INSERT INTO sessions (session_id, key, data) VALUES (?, 'live_chat_data', ?)
           ON CONFLICT(session_id, key) DO UPDATE SET data = excluded.data`,
     args: ['account_' + cPhone, JSON.stringify(Array.isArray(items) ? items : [])]
@@ -158,6 +176,13 @@ async function saveLiveChatBuffer(phone, items) {
 async function deleteWhatsAppSession(phone) {
   const cPhone = canonicalPhone(phone);
   const p10 = (cPhone.length === 12 && cPhone.startsWith('91')) ? cPhone.slice(2) : cPhone;
+  try {
+    const udb = getUserDb(cPhone);
+    await udb.execute({
+      sql: 'DELETE FROM sessions WHERE session_id = ? OR session_id = ?',
+      args: ['account_' + cPhone, 'account_' + p10]
+    });
+  } catch (_) {}
   await db.execute({
     sql: 'DELETE FROM sessions WHERE session_id = ? OR session_id = ?',
     args: ['account_' + cPhone, 'account_' + p10]
@@ -167,6 +192,14 @@ async function deleteWhatsAppSession(phone) {
 async function getDisplayName(phone) {
   const cPhone = canonicalPhone(phone);
   const p10 = (cPhone.length === 12 && cPhone.startsWith('91')) ? cPhone.slice(2) : cPhone;
+  try {
+    const udb = getUserDb(cPhone);
+    const res = await udb.execute({
+      sql: 'SELECT display_name FROM aaira_account_settings WHERE phone = ? OR phone = ?',
+      args: [cPhone, p10]
+    });
+    if (res.rows[0]?.display_name) return res.rows[0].display_name;
+  } catch (_) {}
   const res = await db.execute({
     sql: 'SELECT display_name FROM aaira_account_settings WHERE phone = ? OR phone = ?',
     args: [cPhone, p10]
@@ -176,6 +209,15 @@ async function getDisplayName(phone) {
 
 async function setDisplayName(phone, displayName) {
   const cPhone = canonicalPhone(phone);
+  try {
+    await initUserDb(cPhone);
+    const udb = getUserDb(cPhone);
+    await udb.execute({
+      sql: `INSERT INTO aaira_account_settings (phone, display_name, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(phone) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at`,
+      args: [cPhone, displayName]
+    });
+  } catch (_) {}
   await db.execute({
     sql: `INSERT INTO aaira_account_settings (phone, display_name, updated_at) VALUES (?, ?, datetime('now'))
           ON CONFLICT(phone) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at`,
@@ -187,6 +229,20 @@ async function setDisplayName(phone, displayName) {
 async function getBotSettings(phone) {
   const cPhone = canonicalPhone(phone);
   const p10 = (cPhone.length === 12 && cPhone.startsWith('91')) ? cPhone.slice(2) : cPhone;
+  try {
+    const udb = getUserDb(cPhone);
+    const res = await udb.execute({
+      sql: 'SELECT bot_active, auto_reply_enabled FROM aaira_account_settings WHERE phone = ? OR phone = ?',
+      args: [cPhone, p10]
+    });
+    if (res.rows[0]) {
+      const row = res.rows[0];
+      return {
+        botActive: row.bot_active === 1 || row.bot_active === true,
+        autoReplyEnabled: row.auto_reply_enabled === 1 || row.auto_reply_enabled === true
+      };
+    }
+  } catch (_) {}
   const res = await db.execute({
     sql: 'SELECT bot_active, auto_reply_enabled FROM aaira_account_settings WHERE phone = ? OR phone = ?',
     args: [cPhone, p10]
@@ -201,6 +257,20 @@ async function getBotSettings(phone) {
 async function getAISettings(phone) {
   const cPhone = canonicalPhone(phone);
   const p10 = (cPhone.length === 12 && cPhone.startsWith('91')) ? cPhone.slice(2) : cPhone;
+  try {
+    const udb = getUserDb(cPhone);
+    const res = await udb.execute({
+      sql: 'SELECT groq_ai_enabled, saved_model_enabled FROM aaira_account_settings WHERE phone = ? OR phone = ?',
+      args: [cPhone, p10]
+    });
+    if (res.rows[0]) {
+      const row = res.rows[0];
+      return {
+        groqAIEnabled: row.groq_ai_enabled === 1 || row.groq_ai_enabled === true,
+        savedModelEnabled: row.saved_model_enabled === 1 || row.saved_model_enabled === true
+      };
+    }
+  } catch (_) {}
   const res = await db.execute({
     sql: 'SELECT groq_ai_enabled, saved_model_enabled FROM aaira_account_settings WHERE phone = ? OR phone = ?',
     args: [cPhone, p10]
@@ -216,6 +286,15 @@ async function setBotSetting(phone, setting, value) {
   const cPhone = canonicalPhone(phone);
   const col = setting === 'botActive' ? 'bot_active' : 'auto_reply_enabled';
   const valInt = value ? 1 : 0;
+  try {
+    await initUserDb(cPhone);
+    const udb = getUserDb(cPhone);
+    await udb.execute({
+      sql: `INSERT INTO aaira_account_settings (phone, ${col}, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(phone) DO UPDATE SET ${col} = excluded.${col}, updated_at = excluded.updated_at`,
+      args: [cPhone, valInt]
+    });
+  } catch (_) {}
   await db.execute({
     sql: `INSERT INTO aaira_account_settings (phone, ${col}, updated_at) VALUES (?, ?, datetime('now'))
           ON CONFLICT(phone) DO UPDATE SET ${col} = excluded.${col}, updated_at = excluded.updated_at`,
@@ -225,35 +304,42 @@ async function setBotSetting(phone, setting, value) {
 }
 
 async function listRegisteredPhones() {
-  const res = await db.execute({
-    sql: "SELECT session_id, data FROM sessions WHERE key = 'creds' AND session_id LIKE 'account_%'"
-  });
+  // Only resume active accounts that belong to approved users AND have valid paired WhatsApp creds in their dedicated DB
+  const usersRes = await db.execute("SELECT phone FROM aaira_user_credentials WHERE approved = 1");
   const phones = [];
-  for (const row of res.rows || []) {
-    const match = /^account_(\d{8,20})$/.exec(row.session_id || '');
-    if (!match) continue;
-    let creds = row.data;
-    if (typeof creds === 'string') {
-      try { creds = JSON.parse(creds); } catch { continue; }
-    }
-    if ((creds?.registered === true || creds?.registered === 'true') && creds?.account) {
-      phones.push(canonicalPhone(match[1]));
-    }
+  for (const row of usersRes.rows || []) {
+    const cPhone = canonicalPhone(row.phone);
+    if (!cPhone) continue;
+    try {
+      const udb = getUserDb(cPhone);
+      const res = await udb.execute({
+        sql: "SELECT data FROM sessions WHERE key = 'creds' AND session_id = ?",
+        args: ['account_' + cPhone]
+      });
+      const credsRow = res.rows[0];
+      if (credsRow && credsRow.data) {
+        let creds = typeof credsRow.data === 'string' ? JSON.parse(credsRow.data) : credsRow.data;
+        if ((creds?.registered === true || creds?.registered === 'true') && creds?.account) {
+          phones.push(cPhone);
+        }
+      }
+    } catch (_) {}
   }
   return [...new Set(phones)];
 }
 
 async function claimWhatsAppSessionLock(phone, ownerToken, leaseSeconds = 120) {
   const cPhone = canonicalPhone(phone);
-  const p10 = (cPhone.length === 12 && cPhone.startsWith('91')) ? cPhone.slice(2) : cPhone;
+  await initUserDb(cPhone);
+  const udb = getUserDb(cPhone);
   const now = Date.now();
-  const res = await db.execute({
-    sql: 'SELECT instance_token, acquired_at FROM whatsapp_session_locks WHERE account_phone = ? OR account_phone = ?',
-    args: [cPhone, p10]
+  const res = await udb.execute({
+    sql: 'SELECT instance_token, acquired_at FROM whatsapp_session_locks WHERE account_phone = ?',
+    args: [cPhone]
   });
   const row = res.rows[0];
   if (!row || !row.instance_token || (now - Number(row.acquired_at || 0) > leaseSeconds * 1000) || row.instance_token === ownerToken) {
-    await db.execute({
+    await udb.execute({
       sql: `INSERT INTO whatsapp_session_locks (account_phone, instance_token, acquired_at) VALUES (?, ?, ?)
             ON CONFLICT(account_phone) DO UPDATE SET instance_token = excluded.instance_token, acquired_at = excluded.acquired_at`,
       args: [cPhone, ownerToken, String(now)]
@@ -265,18 +351,20 @@ async function claimWhatsAppSessionLock(phone, ownerToken, leaseSeconds = 120) {
 
 async function releaseWhatsAppSessionLock(phone, ownerToken) {
   const cPhone = canonicalPhone(phone);
-  const p10 = (cPhone.length === 12 && cPhone.startsWith('91')) ? cPhone.slice(2) : cPhone;
-  if (ownerToken) {
-    await db.execute({
-      sql: 'DELETE FROM whatsapp_session_locks WHERE (account_phone = ? OR account_phone = ?) AND instance_token = ?',
-      args: [cPhone, p10, ownerToken]
-    });
-  } else {
-    await db.execute({
-      sql: 'DELETE FROM whatsapp_session_locks WHERE account_phone = ? OR account_phone = ?',
-      args: [cPhone, p10]
-    });
-  }
+  try {
+    const udb = getUserDb(cPhone);
+    if (ownerToken) {
+      await udb.execute({
+        sql: 'DELETE FROM whatsapp_session_locks WHERE account_phone = ? AND instance_token = ?',
+        args: [cPhone, ownerToken]
+      });
+    } else {
+      await udb.execute({
+        sql: 'DELETE FROM whatsapp_session_locks WHERE account_phone = ?',
+        args: [cPhone]
+      });
+    }
+  } catch (_) {}
   return true;
 }
 

@@ -1,4 +1,4 @@
-const { db } = require('./db');
+const { getUserDb, initUserDb, canonicalPhone } = require('./db');
 const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 
 // In-memory cache for fast read/write of keys (eliminates Baileys pre-key upload timeouts & Bad MAC)
@@ -27,14 +27,17 @@ async function retry(operation, label, attempts = 5) {
   throw lastError;
 }
 
-const useSupabaseAuthState = async (sessionId) => {
+const useSupabaseAuthState = async (sessionId, ownerPhone) => {
+  const phone = canonicalPhone(ownerPhone || String(sessionId || '').replace(/^account_/, ''));
+  await initUserDb(phone);
+  const udb = getUserDb(phone);
   const cache = getSessionCache(sessionId);
 
   const writeData = async (data, key) => {
     cache.set(key, data);
     return retry(async () => {
       const jsonString = JSON.stringify(data, BufferJSON.replacer);
-      await db.execute({
+      await udb.execute({
         sql: 'INSERT INTO sessions (session_id, key, data) VALUES (?, ?, ?) ON CONFLICT(session_id, key) DO UPDATE SET data = excluded.data',
         args: [sessionId, key, jsonString]
       });
@@ -44,7 +47,7 @@ const useSupabaseAuthState = async (sessionId) => {
   const readData = async (key) => {
     if (cache.has(key)) return cache.get(key);
     return retry(async () => {
-      const res = await db.execute({
+      const res = await udb.execute({
         sql: 'SELECT data FROM sessions WHERE session_id = ? AND key = ?',
         args: [sessionId, key]
       });
@@ -59,7 +62,7 @@ const useSupabaseAuthState = async (sessionId) => {
   const removeData = async (key) => {
     cache.delete(key);
     return retry(async () => {
-      await db.execute({
+      await udb.execute({
         sql: 'DELETE FROM sessions WHERE session_id = ? AND key = ?',
         args: [sessionId, key]
       });
@@ -84,13 +87,13 @@ const useSupabaseAuthState = async (sessionId) => {
           }
         }
         if (missingIds.length > 0) {
-          for (let i = 0; i < missingIds.length; i += 50) {
-            const chunk = missingIds.slice(i, i + 50);
+          for (let i = 0; i < missingIds.length; i += 100) {
+            const chunk = missingIds.slice(i, i + 100);
             const placeholders = chunk.map(() => '?').join(',');
             const keys = chunk.map(id => type + '-' + id);
             try {
               const res = await retry(async () => {
-                return await db.execute({
+                return await udb.execute({
                   sql: `SELECT key, data FROM sessions WHERE session_id = ? AND key IN (${placeholders})`,
                   args: [sessionId, ...keys]
                 });
@@ -137,10 +140,10 @@ const useSupabaseAuthState = async (sessionId) => {
           }
         }
         if (statements.length > 0) {
-          for (let i = 0; i < statements.length; i += 50) {
-            const chunk = statements.slice(i, i + 50);
+          for (let i = 0; i < statements.length; i += 100) {
+            const chunk = statements.slice(i, i + 100);
             await retry(async () => {
-              await db.batch(chunk, 'write');
+              await udb.batch(chunk, 'write');
             }, `batch write ${chunk.length} keys`);
           }
         }
@@ -153,7 +156,7 @@ const useSupabaseAuthState = async (sessionId) => {
     saveCreds: async () => writeData(state.creds, 'creds'),
     clearAuthState: async () => retry(async () => {
       cache.clear();
-      await db.execute({
+      await udb.execute({
         sql: 'DELETE FROM sessions WHERE session_id = ?',
         args: [sessionId]
       });

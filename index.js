@@ -927,7 +927,7 @@ async function startAccountBot(ownerPhone){
     }
     if(lock!==true && lock!=='claimed' && lock?.claimed!==true)throw new Error('WhatsApp account session lock could not be acquired');
     try{const savedChats=await aairaAuth.loadLiveChatBuffer(ownerPhone);liveChatBuffers.set(ownerPhone,savedChats.slice(-1000));}catch(e){console.error('[LIVE CHAT] Restore failed:',e.message);}
-    const {state,saveCreds,clearAuthState}=await useSupabaseAuthState('account_'+ownerPhone);
+    const {state,saveCreds,clearAuthState}=await useSupabaseAuthState('account_'+ownerPhone, ownerPhone);
     let waVersion;try{const live=await fetchLatestWaWebVersion();if(Array.isArray(live?.version)&&live.version.length===3)waVersion=live.version;}catch(e){console.warn('[WA] Version lookup:',e.message);}
     const socket=makeWASocket({
       ...(waVersion?{version:waVersion}:{}),
