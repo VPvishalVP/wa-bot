@@ -37,7 +37,7 @@ def main():
    for j in range(n):
     m=r.choice(msgs); k=intent(m); x,y,z=BANK[k]
     row={"id":start+j+1,"category":k,"input_sample":m,"reply":f"{r.choice(x)} {r.choice(y)} {r.choice(z)}"}
-    f.write(json.dumps(row,ensure_ascii=False)+"\\n")
+    f.write(json.dumps(row,ensure_ascii=False)+"\n")
   print(f"created {fn}: {n:,} records")
  print(f"Completed requested count: {a.count:,}. Generated from templates; not 100M individually unique validated messages.")
 if __name__=="__main__": main()
