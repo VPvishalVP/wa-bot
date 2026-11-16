@@ -91,8 +91,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
   <div class="row" style="margin-top:15px"><button type="button" onclick="toggleBot('on')">BOT ON</button><button type="button" onclick="toggleBot('off')">BOT OFF</button></div>
   <div class="row"><button type="button" onclick="toggleAuto('on')">AUTO-REPLY ON</button><button type="button" onclick="toggleAuto('off')">AUTO-REPLY OFF</button></div>
   <div class="row" style="margin-top:10px">
-    <button onclick="refreshStatus()" style="flex:1">↻ REFRESH STATUS</button>
-    <button onclick="disconnectWhatsApp()" style="flex:1;background:rgba(50,15,15,0.7);border-color:#b91c1c;color:#fca5a5">🔌 DISCONNECT / UNLINK</button>
+    <button onclick="refreshStatus()" style="width:100%">↻ REFRESH STATUS</button>
   </div>
 </section>
 
