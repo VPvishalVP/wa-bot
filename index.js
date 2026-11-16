@@ -71,7 +71,7 @@ footer{text-align:center;color:#777;padding:20px;font-size:12px}
 </head>
 <body>
 <section id="welcomeGate" style="position:fixed;inset:0;z-index:100;background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.68)),url('/anime-bg.jpg') center center / cover no-repeat;display:flex;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0;text-align:center"><div class="logo" style="font-size:30px;letter-spacing:3px">VIHUHUHU KA</div><h2 style="font-size:25px;margin:12px 0;text-shadow:0 0 14px #ddd">✦ AAIRA BOT ✦</h2><p class="note" style="font-size:14px">WELCOME TO AAIRA WHATSAPP BOT</p><a id="welcomeStartButton" href="#authGate" role="button" style="display:block;background:rgba(8,8,8,.58);color:#fff;border:1px solid #aaa;border-radius:10px;padding:12px 16px;margin:18px 4px 4px;cursor:pointer;font-weight:bold;text-decoration:none;font-size:16px;width:100%">✨ START / REGISTER</a></div></section>
-<section id="authGate" style="position:fixed;inset:0;z-index:99;background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.62)),url('/anime-bg.jpg') center center / cover no-repeat;display:none;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur password se login karein ya account banayein.</p><label>Mobile number (10 digit ya country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="8115743185 ya 918115743185"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button type="button" id="loginButton">LOGIN</button><button type="button" id="registerButton">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section>
+<section id="authGate" style="position:fixed;inset:0;z-index:99;background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.62)),url('/anime-bg.jpg') center center / cover no-repeat;display:none;align-items:center;justify-content:center;padding:18px"><div class="panel" style="width:min(440px,100%);margin:0"><h2>🔐 AAIRA ACCOUNT</h2><p class="note">Mobile number aur password se login karein ya account banayein.</p><label>Mobile number (10 digit ya country code ke saath)</label><input id="authPhone" inputmode="numeric" placeholder="8115743185 ya 918115743185"><label>Password (minimum 6 characters)</label><input id="authPassword" type="password" minlength="6" maxlength="64" placeholder="Password"><div class="row"><button type="button" id="loginButton" onclick="window.authAction('login')">LOGIN</button><button type="button" id="registerButton" onclick="window.authAction('register')">REGISTER</button></div><button onclick="forgotAccount()" style="width:100%">FORGOT PASSWORD? DELETE ACCOUNT DATA</button><p id="authMessage" class="note"></p></div></section>
 <div class="wrap">
 <header id="mainHeader">
   <div class="logo">AAIRA ✦</div>
@@ -465,13 +465,46 @@ function connectLiveChat(){
   });
 }
 
+function cleanContactName(name){
+  if(!name)return '';
+  let res='';
+  for(let i=0;i<name.length;i++){
+    const code=name.charCodeAt(i);
+    if(code!==0x200B&&code!==0x200C&&code!==0x200D&&code!==0x200E&&code!==0x200F&&code!==0xFEFF&&code!==0x3164&&code!==0xFFA0){
+      res+=name[i];
+    }
+  }
+  return res.trim();
+}
+
+function extractDigits(str){
+  if(!str)return '';
+  let res='';
+  for(let i=0;i<str.length;i++){
+    const ch=str[i];
+    if(ch>='0'&&ch<='9') res+=ch;
+  }
+  return res;
+}
+
 function isRealSavedName(name){
   if(!name)return false;
-  const s=String(name).replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim();
+  const s=String(name).trim();
   if(!s)return false;
-  if(/^[\s\u200B-\u200D\uFEFF\u3164\uFFA0]+$/.test(s))return false;
-  if(/^(whatsapp\s*(contact|user)|none|nõne|null|undefined|unknown|sender)$/i.test(s))return false;
-  if(/^\+?\d{8,16}$/.test(s.replace(/[\s\-()]+/g,'')))return false;
+  const lower=s.toLowerCase();
+  if(lower==='whatsapp contact'||lower==='whatsapp user'||lower==='none'||lower==='nõne'||lower==='null'||lower==='undefined'||lower==='unknown'||lower==='sender')return false;
+  let digits='',nonDigits='',visible='';
+  for(let i=0;i<s.length;i++){
+    const code=s.charCodeAt(i);
+    const ch=s[i];
+    if(ch>='0'&&ch<='9') digits+=ch;
+    else if(ch!=='+'&&ch!=='-'&&ch!=='('&&ch!==')'&&ch!==' ') nonDigits+=ch;
+    if(code>32&&code!==0x200B&&code!==0x200C&&code!==0x200D&&code!==0x200E&&code!==0x200F&&code!==0xFEFF&&code!==0x3164&&code!==0xFFA0){
+      visible+=ch;
+    }
+  }
+  if(!nonDigits&&digits.length>=7)return false;
+  if(!visible)return false;
   return true;
 }
 
@@ -522,9 +555,9 @@ function renderLiveChats(){
       ?'background:rgba(16,185,129,0.22);border:1px solid #10b981;border-radius:10px;padding:9px 10px;margin-bottom:6px;width:100%;text-align:left;display:block;cursor:pointer;'
       :'background:rgba(25,25,25,0.7);border:1px solid #444;border-radius:10px;padding:9px 10px;margin-bottom:6px;width:100%;text-align:left;display:block;cursor:pointer;';
 
-    const phone=/^\d{8,15}@s\.whatsapp\.net$/.test(jid)
-      ?jid.split('@')[0]
-      :(/^\d{8,15}$/.test(lastItem?.phoneNumber||'')?lastItem.phoneNumber:'');
+    const phone=(jid&&jid.indexOf('@s.whatsapp.net')>0)
+      ?jid.replace('@s.whatsapp.net','').replace(/[^0-9]/g,'')
+      :(String(lastItem?.phoneNumber||'').replace(/[^0-9]/g,''));
     const rawSaved=contactNames.get(jid)||(isRealSavedName(lastItem?.contactName)?lastItem.contactName:'');
     const isSaved=isRealSavedName(rawSaved);
     const displayName=isSaved?rawSaved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():(phone?'+'+phone:'Unknown');
@@ -572,9 +605,9 @@ function renderLiveChats(){
     activeHeader.replaceChildren();
     if(selectedLiveJid){
       const activeItem=contactMap.get(selectedLiveJid);
-      const activePhone=/^\d{8,15}@s\.whatsapp\.net$/.test(selectedLiveJid)
-        ?selectedLiveJid.split('@')[0]
-        :(/^\d{8,15}$/.test(activeItem?.phoneNumber||'')?activeItem.phoneNumber:'');
+      const activePhone=(selectedLiveJid&&selectedLiveJid.indexOf('@s.whatsapp.net')>0)
+        ?selectedLiveJid.replace('@s.whatsapp.net','').replace(/[^0-9]/g,'')
+        :(String(activeItem?.phoneNumber||'').replace(/[^0-9]/g,''));
       const rawActiveSaved=contactNames.get(selectedLiveJid)||(isRealSavedName(activeItem?.contactName)?activeItem.contactName:'');
       const isSavedActive=isRealSavedName(rawActiveSaved);
       const activeTitle=isSavedActive?rawActiveSaved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():(activePhone?'+'+activePhone:'Unknown');
@@ -639,8 +672,8 @@ function renderLiveChats(){
       tag.style.cssText='font-size:11px;font-weight:bold;color:#93c5fd;margin-bottom:4px';
       const msgSaved=isRealSavedName(x.contactName)?x.contactName:(isRealSavedName(activeSavedName)?activeSavedName:'');
       const isSavedMsg=isRealSavedName(msgSaved);
-      const phone=x.phoneNumber||(/^(\d{8,15})@s\.whatsapp\.net$/.exec(x.jid)?.[1]||'');
-      tag.textContent=isSavedMsg?msgSaved.replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim():(phone?'+'+phone:'Sender');
+      const phone=(x&&x.phoneNumber)?extractDigits(x.phoneNumber):((x&&x.jid&&x.jid.indexOf('@s.whatsapp.net')>0)?extractDigits(x.jid.replace('@s.whatsapp.net','')):'');
+      tag.textContent=isSavedMsg?cleanContactName(msgSaved):(phone?'+'+phone:'Sender');
       d.appendChild(tag);
     }
 
@@ -665,9 +698,6 @@ function renderLiveChats(){
 
     messages.appendChild(d);
   });
-
-  messages.scrollTop=messages.scrollHeight;
-}
 
   messages.scrollTop=messages.scrollHeight;
 }
