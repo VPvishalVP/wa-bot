@@ -11,7 +11,8 @@ const db = createClient({
   authToken: authToken || undefined
 });
 
-const accountsDir = path.join(__dirname, 'data', 'accounts');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const accountsDir = path.join(DATA_DIR, 'accounts');
 if (!fs.existsSync(accountsDir)) {
   fs.mkdirSync(accountsDir, { recursive: true });
 }
