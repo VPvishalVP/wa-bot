@@ -1,4 +1,12 @@
 require('dotenv').config();
+
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason?.message || reason);
+});
+
 const express = require('express');
 const { default: makeWASocket, DisconnectReason, fetchLatestWaWebVersion, downloadMediaMessage, Browsers } = require('@whiskeysockets/baileys');
 const { useSupabaseAuthState } = require('./supabaseAuth');
@@ -25,11 +33,24 @@ app.get('/background.svg',(req,res)=>res.type('image/svg+xml').sendFile(require(
 
 let currentDashboardOwnerPhone = null;
 const liveChatBuffers=new Map(),liveChatListeners=new Map(),liveContactNames=new Map(),liveWhatsAppNames=new Map(),liveContactNumbers=new Map(),lidToPhoneJid=new Map();
+const liveChatSaveTimers = new Map();
+function scheduleSaveLiveChatBuffer(owner) {
+  if (liveChatSaveTimers.has(owner)) return;
+  const timer = setTimeout(() => {
+    liveChatSaveTimers.delete(owner);
+    const b = liveChatBuffers.get(owner);
+    if (b) {
+      aairaAuth.saveLiveChatBuffer(owner, b.slice()).catch(e => console.error('[LIVE CHAT] Persistent save failed:', e.message));
+    }
+  }, 1500);
+  liveChatSaveTimers.set(owner, timer);
+}
+
 function registerJidPair(primary,alternate){const p=String(primary||'').replace(/:\d+@/, '@'),a=String(alternate||'').replace(/:\d+@/, '@');if(p.endsWith('@lid')&&a.endsWith('@s.whatsapp.net'))lidToPhoneJid.set(p,a);else if(a.endsWith('@lid')&&p.endsWith('@s.whatsapp.net'))lidToPhoneJid.set(a,p);}
 function preferredContactJid(primary,alternate){registerJidPair(primary,alternate);const p=String(primary||'').replace(/:\d+@/, '@'),a=String(alternate||'').replace(/:\d+@/, '@');const pn=/^\d{8,15}@s\.whatsapp\.net$/;if(pn.test(p))return p;if(pn.test(a))return a;if(p&&lidToPhoneJid.has(p))return lidToPhoneJid.get(p);if(a&&lidToPhoneJid.has(a))return lidToPhoneJid.get(a);return p||a||'';}
 function liveMessageText(message){let m=message||{};for(let i=0;i<5;i++){if(m.ephemeralMessage?.message)m=m.ephemeralMessage.message;else if(m.viewOnceMessage?.message)m=m.viewOnceMessage.message;else if(m.viewOnceMessageV2?.message)m=m.viewOnceMessageV2.message;else if(m.documentWithCaptionMessage?.message)m=m.documentWithCaptionMessage.message;else break;}const t=m.conversation||m.extendedTextMessage?.text||m.imageMessage?.caption||m.videoMessage?.caption||m.documentMessage?.caption||m.buttonsResponseMessage?.selectedDisplayText||m.listResponseMessage?.title||m.templateButtonReplyMessage?.selectedDisplayText||m.pollCreationMessage?.name||m.pollCreationMessageV3?.name||m.locationMessage?.name||m.locationMessage?.address||m.contactMessage?.displayName||m.contactsArrayMessage?.displayName;if(t)return String(t);if(m.imageMessage)return '🖼️ Image'+(m.imageMessage.caption?' — '+m.imageMessage.caption:'');if(m.videoMessage)return '🎥 Video'+(m.videoMessage.caption?' — '+m.videoMessage.caption:'');if(m.audioMessage)return m.audioMessage.ptt?'🎤 Voice message':'🔊 Audio message';if(m.stickerMessage)return '🎭 Sticker';if(m.documentMessage)return '📎 Document: '+(m.documentMessage.fileName||'file');if(m.locationMessage)return '📍 Location';if(m.liveLocationMessage)return '📍 Live location';if(m.contactMessage||m.contactsArrayMessage)return '👤 Contact card';if(m.reactionMessage)return '😊 Reaction: '+(m.reactionMessage.text||'');if(m.pollUpdateMessage)return '📊 Poll vote';if(m.protocolMessage)return '';return '';}
 function isRealSavedName(name){if(!name)return false;const s=String(name).replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim();if(!s)return false;if(/^[\s\u200B-\u200D\uFEFF\u3164\uFFA0]+$/.test(s))return false;if(/^(whatsapp\s*(contact|user)|none|nõne|null|undefined|unknown|sender)$/i.test(s))return false;if(/^\+?\d{8,16}$/.test(s.replace(/[\s\-()]+/g,'')))return false;return true;}
-function publishLiveChat(owner,item){if(!owner||!item?.jid)return;item.jid=String(item.jid).replace(/:\d+@/,'@');if(item.jid.endsWith('@lid')){if(lidToPhoneJid.has(item.jid)){item.jid=lidToPhoneJid.get(item.jid);}else if(item.phoneNumber&&/^\d{8,15}$/.test(item.phoneNumber)){const mapped=item.phoneNumber+'@s.whatsapp.net';lidToPhoneJid.set(item.jid,mapped);item.jid=mapped;}}let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}const names=liveContactNames.get(owner)||new Map();liveContactNames.set(owner,names);const numbers=liveContactNumbers.get(owner)||new Map();liveContactNumbers.set(owner,numbers);const pnJid=/^(\d{8,15})@s\.whatsapp\.net$/.exec(item.jid);const suppliedNumber=String(item.phoneNumber||'').replace(/\D/g,'');const incomingNumber=pnJid?.[1]||(/^\d{8,15}$/.test(suppliedNumber)?suppliedNumber:'');if(incomingNumber)numbers.set(item.jid,incomingNumber);const rawIncomingName=String(item.contactName||'').replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim().slice(0,100);const isIncomingSaved=isRealSavedName(rawIncomingName);if(isIncomingSaved)names.set(item.jid,rawIncomingName);const prior=[...b].reverse().find(x=>x.jid===item.jid&&isRealSavedName(x.contactName))?.contactName||'';const resolvedSavedName=(isIncomingSaved?rawIncomingName:'')||names.get(item.jid)||(isRealSavedName(prior)?prior:'')||'';if(resolvedSavedName){let updatedAny=false;for(const x of b){if(x.jid===item.jid&&(!x.contactName||!isRealSavedName(x.contactName))){x.contactName=resolvedSavedName;updatedAny=true;}}if(updatedAny){aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));}}let cleanText=String(item.text||'').replace(/\u200B/g,'').trim();if(!cleanText)return;const entry={id:item.id||require('crypto').randomUUID(),jid:item.jid,text:cleanText.slice(0,4000),contactName:resolvedSavedName,phoneNumber:incomingNumber||numbers.get(item.jid)||'',fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()};if(item.id&&b.some(x=>x.id===item.id))return;if(b.some(x=>x.jid===entry.jid&&x.fromMe===entry.fromMe&&x.text===entry.text&&Math.abs(Number(x.timestamp)-Number(entry.timestamp))<4000))return;const existing=b.findIndex(x=>x.jid===entry.jid&&!x.text);if(existing>=0)b.splice(existing,1);b.push(entry);const perJid=b.filter(x=>x.jid===entry.jid);if(perJid.length>100){const remove=new Set(perJid.slice(0,perJid.length-100).map(x=>x.id));b=b.filter(x=>!remove.has(x.id));}const latestByJid=new Map();for(const x of b){const prev=latestByJid.get(x.jid);if(!prev||x.timestamp>prev.timestamp)latestByJid.set(x.jid,x);}const newestJids=[...latestByJid.values()].sort((a,c)=>c.timestamp-a.timestamp).slice(0,100).map(x=>x.jid);const keep=new Set(newestJids);b=b.filter(x=>keep.has(x.jid));if(b.length>1000)b.splice(0,b.length-1000);liveChatBuffers.set(owner,b);aairaAuth.saveLiveChatBuffer(owner,b.slice()).catch(e=>console.error('[LIVE CHAT] Persistent save failed:',e.message));for(const fn of liveChatListeners.get(owner)||[]){try{fn(entry)}catch{}}}
+function publishLiveChat(owner,item){if(!owner||!item?.jid)return;item.jid=String(item.jid).replace(/:\d+@/,'@');if(item.jid.endsWith('@lid')){if(lidToPhoneJid.has(item.jid)){item.jid=lidToPhoneJid.get(item.jid);}else if(item.phoneNumber&&/^\d{8,15}$/.test(item.phoneNumber)){const mapped=item.phoneNumber+'@s.whatsapp.net';lidToPhoneJid.set(item.jid,mapped);item.jid=mapped;}}let b=liveChatBuffers.get(owner);if(!b){b=[];liveChatBuffers.set(owner,b)}const names=liveContactNames.get(owner)||new Map();liveContactNames.set(owner,names);const numbers=liveContactNumbers.get(owner)||new Map();liveContactNumbers.set(owner,numbers);const pnJid=/^(\d{8,15})@s\.whatsapp\.net$/.exec(item.jid);const suppliedNumber=String(item.phoneNumber||'').replace(/\D/g,'');const incomingNumber=pnJid?.[1]||(/^\d{8,15}$/.test(suppliedNumber)?suppliedNumber:'');if(incomingNumber)numbers.set(item.jid,incomingNumber);const rawIncomingName=String(item.contactName||'').replace(/[\u200E\u200F\u202A-\u202E]/g,'').trim().slice(0,100);const isIncomingSaved=isRealSavedName(rawIncomingName);if(isIncomingSaved)names.set(item.jid,rawIncomingName);const prior=[...b].reverse().find(x=>x.jid===item.jid&&isRealSavedName(x.contactName))?.contactName||'';const resolvedSavedName=(isIncomingSaved?rawIncomingName:'')||names.get(item.jid)||(isRealSavedName(prior)?prior:'')||'';if(resolvedSavedName){let updatedAny=false;for(const x of b){if(x.jid===item.jid&&(!x.contactName||!isRealSavedName(x.contactName))){x.contactName=resolvedSavedName;updatedAny=true;}}if(updatedAny){scheduleSaveLiveChatBuffer(owner);}}let cleanText=String(item.text||'').replace(/\u200B/g,'').trim();if(!cleanText)return;const entry={id:item.id||require('crypto').randomUUID(),jid:item.jid,text:cleanText.slice(0,4000),contactName:resolvedSavedName,phoneNumber:incomingNumber||numbers.get(item.jid)||'',fromMe:!!item.fromMe,timestamp:item.timestamp||Date.now()};if(item.id&&b.some(x=>x.id===item.id))return;if(b.some(x=>x.jid===entry.jid&&x.fromMe===entry.fromMe&&x.text===entry.text&&Math.abs(Number(x.timestamp)-Number(entry.timestamp))<4000))return;const existing=b.findIndex(x=>x.jid===entry.jid&&!x.text);if(existing>=0)b.splice(existing,1);b.push(entry);const perJid=b.filter(x=>x.jid===entry.jid);if(perJid.length>100){const remove=new Set(perJid.slice(0,perJid.length-100).map(x=>x.id));b=b.filter(x=>!remove.has(x.id));}const latestByJid=new Map();for(const x of b){const prev=latestByJid.get(x.jid);if(!prev||x.timestamp>prev.timestamp)latestByJid.set(x.jid,x);}const newestJids=[...latestByJid.values()].sort((a,c)=>c.timestamp-a.timestamp).slice(0,100).map(x=>x.jid);const keep=new Set(newestJids);b=b.filter(x=>keep.has(x.jid));if(b.length>1000)b.splice(0,b.length-1000);liveChatBuffers.set(owner,b);scheduleSaveLiveChatBuffer(owner);for(const fn of liveChatListeners.get(owner)||[]){try{fn(entry)}catch{}}}
 
 const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -1174,7 +1195,7 @@ const recentMessagesStore = new Map();
 function storeMessage(id, message) {
   if (!id || !message) return;
   recentMessagesStore.set(id, message);
-  if (recentMessagesStore.size > 2000) {
+  if (recentMessagesStore.size > 600) {
     const oldest = recentMessagesStore.keys().next().value;
     recentMessagesStore.delete(oldest);
   }
@@ -1312,7 +1333,10 @@ async function startAccountBot(ownerPhone){
       printQRInTerminal:false,
       logger:pino({level:'warn'}),
       connectTimeoutMs:60000,
-      keepAliveIntervalMs:25000,
+      keepAliveIntervalMs:15000,
+      defaultQueryTimeoutMs:60000,
+      retryRequestDelayMs:300,
+      maxMsgRetryCount:3,
       syncFullHistory:false,
       browser:Browsers.ubuntu('Chrome'),
       getMessage: async (key) => {
@@ -1326,19 +1350,27 @@ async function startAccountBot(ownerPhone){
     accountStatus.set(ownerPhone,'Connecting');
     adminRouter.setWhatsAppStatus(ownerPhone,'Connecting');
 
-    // Persist WhatsApp credentials whenever Baileys updates them.
+    // Persist WhatsApp credentials whenever Baileys updates them (debounced).
+    let credsSaveTimer = null;
     socket.ev.on('creds.update',async()=>{
       try{
-        await saveCreds();
         const isVerifiedLinked = !!(socket.authState?.creds?.registered && socket.authState?.creds?.account);
         if(isVerifiedLinked && accountStatus.get(ownerPhone) !== 'Connected'){
           accountStatus.set(ownerPhone,'Connected');
           adminRouter.setWhatsAppStatus(ownerPhone,'Connected');
           console.log('[WA] 🎉 Mobile pairing confirmed! Account now fully Connected:',ownerPhone);
         }
-        console.log('[WA] Session credentials saved for account',ownerPhone);
+        if(credsSaveTimer) clearTimeout(credsSaveTimer);
+        credsSaveTimer = setTimeout(async () => {
+          try {
+            await saveCreds();
+            console.log('[WA] Session credentials saved for account',ownerPhone);
+          } catch(err) {
+            console.error('[WA] Session credentials save failed for account',ownerPhone,err.message);
+          }
+        }, 1500);
       }catch(err){
-        console.error('[WA] Session credentials save failed for account',ownerPhone,err.message);
+        console.error('[WA] creds.update error:',ownerPhone,err.message);
       }
     });
 
@@ -1375,17 +1407,25 @@ async function startAccountBot(ownerPhone){
         const lockTimer=accountLockTimers.get(ownerPhone);
         if(lockTimer){clearInterval(lockTimer);accountLockTimers.delete(ownerPhone);}
         const statusCode=lastDisconnect?.error?.output?.statusCode;
-        console.log('[WA] Closed account',ownerPhone,'statusCode:',statusCode);
-        const isAuthInvalid=statusCode===DisconnectReason.loggedOut||statusCode===401||statusCode===403||statusCode===500||statusCode===411;
-        if(isAuthInvalid){
+        console.log('[WA] Closed account',ownerPhone,'statusCode:',statusCode,'reason:',lastDisconnect?.error?.message||lastDisconnect?.error);
+
+        // ONLY DisconnectReason.loggedOut (401) is a true logout by the user on their phone!
+        // NEVER clear auth state on 500 (badSession/stream error), 515 (restartRequired), 428, 408, 440, etc.!
+        const isExplicitLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+        if(isExplicitLogout){
           try{await clearAuthState();}catch(e){console.error('[WA] Clear auth failed:',e.message);}
           try{await aairaAuth.releaseWhatsAppSessionLock(ownerPhone);}catch(e){}
-          console.log('[WA] Account logged out or auth invalid ('+statusCode+'); session cleared so user can pair again.');
+          console.log('[WA] Account explicitly logged out by phone (401); session cleared.');
         }else if(!accountReconnectTimers.has(ownerPhone)){
-          const attempt=(accountReconnectAttempts.get(ownerPhone)||0)+1;
-          accountReconnectAttempts.set(ownerPhone,attempt);
-          const delay=Math.min(4000*Math.pow(2,Math.min(attempt-1,7)),300000);
+          // Restart required (515) -> reconnect immediately in 1s!
+          const isImmediateRestart = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+          const attempt = isImmediateRestart ? 0 : (accountReconnectAttempts.get(ownerPhone)||0)+1;
+          if(!isImmediateRestart) accountReconnectAttempts.set(ownerPhone,attempt);
+
+          // Fast, responsive reconnect backoff: 1s for 515, otherwise 2s..30s max
+          const delay = isImmediateRestart ? 1000 : Math.min(2000 * Math.pow(1.35, Math.min(attempt - 1, 6)), 30000);
           console.log('[WA] Reconnect scheduled for account',ownerPhone,'attempt',attempt,'in',Math.round(delay/1000),'seconds');
+
           const timer=setTimeout(()=>{
             accountReconnectTimers.delete(ownerPhone);
             startAccountBot(ownerPhone).catch(e=>console.error('[WA] Reconnect failed:',e.message));

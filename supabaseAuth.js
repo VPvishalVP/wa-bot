@@ -3,12 +3,25 @@ const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 
 // In-memory cache for fast read/write of keys (eliminates Baileys pre-key upload timeouts & Bad MAC)
 const sessionCaches = new Map();
+const MAX_CACHE_KEYS_PER_SESSION = 1500;
 
 function getSessionCache(sessionId) {
   if (!sessionCaches.has(sessionId)) {
     sessionCaches.set(sessionId, new Map());
   }
   return sessionCaches.get(sessionId);
+}
+
+function setCacheWithLimit(cache, key, value) {
+  cache.set(key, value);
+  if (cache.size > MAX_CACHE_KEYS_PER_SESSION) {
+    for (const k of cache.keys()) {
+      if (k !== 'creds') {
+        cache.delete(k);
+        break;
+      }
+    }
+  }
 }
 
 async function retry(operation, label, attempts = 5) {
@@ -34,7 +47,7 @@ const useSupabaseAuthState = async (sessionId, ownerPhone) => {
   const cache = getSessionCache(sessionId);
 
   const writeData = async (data, key) => {
-    cache.set(key, data);
+    setCacheWithLimit(cache, key, data);
     return retry(async () => {
       const jsonString = JSON.stringify(data, BufferJSON.replacer);
       await udb.execute({
@@ -54,7 +67,7 @@ const useSupabaseAuthState = async (sessionId, ownerPhone) => {
       const row = res.rows[0];
       if (!row || !row.data) return null;
       const val = JSON.parse(row.data, BufferJSON.reviver);
-      cache.set(key, val);
+      setCacheWithLimit(cache, key, val);
       return val;
     }, 'read ' + key);
   };
@@ -70,7 +83,7 @@ const useSupabaseAuthState = async (sessionId, ownerPhone) => {
   };
 
   const creds = (await readData('creds')) || initAuthCreds();
-  cache.set('creds', creds);
+  setCacheWithLimit(cache, 'creds', creds);
 
   const state = {
     creds,
@@ -104,7 +117,7 @@ const useSupabaseAuthState = async (sessionId, ownerPhone) => {
                     const parsed = JSON.parse(row.data, BufferJSON.reviver);
                     const id = row.key.slice((type + '-').length);
                     data[id] = parsed;
-                    cache.set(row.key, parsed);
+                    setCacheWithLimit(cache, row.key, parsed);
                   } catch (e) {
                     console.warn(`[WA AUTH] Parse error for key ${row.key}:`, e.message);
                   }
@@ -124,7 +137,7 @@ const useSupabaseAuthState = async (sessionId, ownerPhone) => {
             const value = data[category][id];
             const key = category + '-' + id;
             if (value) {
-              cache.set(key, value);
+              setCacheWithLimit(cache, key, value);
               const jsonString = JSON.stringify(value, BufferJSON.replacer);
               statements.push({
                 sql: 'INSERT INTO sessions (session_id, key, data) VALUES (?, ?, ?) ON CONFLICT(session_id, key) DO UPDATE SET data = excluded.data',
